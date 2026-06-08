@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 离线分析中间产物(运行时不需要,体积大)
+analysis/out/
+*.pkl
+pollution_grids.npz
+pollution_*.joblib
+green_lst_grid.npz
+feature_grids.npz
+
+# 本地/密钥
+.streamlit/secrets.toml
+/tmp/
+
+# 说明:以下运行时数据文件【需要】提交,勿忽略:
+#   model_v2.joblib, baseline_v2.npz, feature_grids_dense.npz,
+#   heat_risk_grid.npz, heat_risk_model.json, heat_cases.npz,
+#   heat_ems_points.npz, heat_facility_grids.npz
+
+# 本地 Claude 工具配置
+.claude/

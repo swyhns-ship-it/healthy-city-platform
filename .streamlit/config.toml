@@ -1,0 +1,8 @@
+# HIA Demo 主题:明亮健康绿
+[theme]
+base = "light"
+primaryColor = "#2E9E5B"          # 健康绿(强调色:按钮、选中、链接)
+backgroundColor = "#FFFFFF"       # 主背景:纯白,明亮
+secondaryBackgroundColor = "#EAF7EF"  # 次级背景:极浅绿(侧栏、卡片)
+textColor = "#1A2B1F"             # 正文:深墨绿,而非纯黑,柔和
+font = "sans serif"

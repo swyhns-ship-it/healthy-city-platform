@@ -1,0 +1,31 @@
+{
+  "vars": [
+    "MODIS_LST",
+    "dis_ems"
+  ],
+  "const": 0.358103964484261,
+  "beta": {
+    "MODIS_LST": 0.44061594761341927,
+    "dis_ems": 0.1789180259184698
+  },
+  "pval": {
+    "MODIS_LST": 0.001413714519719393,
+    "dis_ems": 0.17896521680936928
+  },
+  "mean": {
+    "MODIS_LST": 39.30195223497411,
+    "dis_ems": 1910.416737427205
+  },
+  "std": {
+    "MODIS_LST": 3.983920564377766,
+    "dis_ems": 1320.7117708441515
+  },
+  "mcfadden_r2": 0.03,
+  "auc_insample": 0.619,
+  "lst_per_degree_beta": 0.1106,
+  "modis_lst_ref": 39.2,
+  "modis_lst_p10": 34.1,
+  "modis_lst_p90": 44.1,
+  "n": 273,
+  "note": "重症logistic(仅当天LST+急救站距离;建成/绿地经LST间接影响,不直接入模)。LST每+1°C的z增量=lst_per_degree_beta。关联性模型,非交叉验证预测"
+}
