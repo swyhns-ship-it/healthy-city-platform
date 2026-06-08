@@ -1085,18 +1085,13 @@ def _heat_ems():
     components.html(_heat_component_html(basemap), height=660, scrolling=False)
 
 
-def render_heat_risk():
-    """热相关健康风险诊断与调控:① 风险诊断 ② 急救站布局模拟(两个标签板块)。"""
+def page_health_risk():
+    """健康风险维度 · 热相关重症风险诊断(局部建成环境→LST→重症化风险)。"""
     mi = heat_risk.model_info()
-    st.markdown("## 热相关健康风险诊断与调控")
+    st.markdown("## 健康风险 · 热相关重症风险诊断")
     st.caption("基于 287 例 60 岁以上中暑病例的 logistic 重症模型(重症 vs 轻症),显著变量为当天地表温度"
                "(p<0.01)与到最近急救站距离。关联性模型,非交叉验证预测,用于规划辅助研判。")
-    tab1, tab2 = st.tabs(["① 风险诊断:建成环境→地表温度→重症化风险", "② 急救站布局模拟"])
-    with tab1:
-        _heat_diag()
-    with tab2:
-        _heat_ems()
-
+    _heat_diag()
     with st.expander("模型与显著变量(logistic 重症模型)", expanded=False):
         b = mi["beta"]; pv = mi.get("pval", {})
         rows = [{"变量": VAR_ZH_HEAT.get(v, v), "OR/标准差": f"{np.exp(b[v]):.2f}",
@@ -1106,11 +1101,18 @@ def render_heat_risk():
         st.markdown(
             "- 样本:287 例 60+ 中暑病例(167 重症/120 轻症),2023–2025 夏季。\n"
             "- 模型**只保留 当天地表温度(p<0.01)+ 到最近急救站距离**;建成密度/容积率/绿地**不直接入模**,"
-            "而是经「② 局部改造连锁」通过影响 LST 间接作用。纳凉站点距离/密度经检验不显著(p≈0.2),未纳入。\n"
+            "而是经上方「局部改造模拟」通过影响 LST 间接作用。纳凉站点距离/密度经检验不显著(p≈0.2),未纳入。\n"
             "- McFadden R²≈%.2f;in-sample AUC≈%.2f,空间分块 CV AUC≈0.59(弱但显著)。\n"
             "- 显著的热信号是「当天高温」(时间维);本图为**关联性风险图**,非交叉验证预测,辅助研判而非精确定点。\n"
-            "- LST 每 +1°C 约使重症 OR×1.12(连锁分析据此把 ΔLST 换算为风险变化)。\n"
+            "- LST 每 +1°C 约使重症 OR×1.12(局部改造据此把 ΔLST 换算为风险变化)。\n"
             "- 个体因素(基础病、送医及时性)主导重症,未纳入。" % (mi["mcfadden_r2"], mi.get("auc_insample", 0.62)))
+
+
+def page_health_resource():
+    """健康资源维度 · 急救站布局模拟(现状站点 + 落站/拖站 what-if)。"""
+    st.markdown("## 健康资源 · 急救站布局模拟")
+    st.caption("以中暑重症风险预测为底图,模拟新增急救站对风险的改善,辅助应急资源选址。")
+    _heat_ems()
 
 
 st.set_page_config(
@@ -1202,44 +1204,68 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ===== 左侧栏:模式 + 案例选择 =====
-with st.sidebar:
-    st.markdown("### 评估模式")
-    mode = st.radio(
-        "模式",
-        ["示范案例", "自定义评估", "热相关健康风险诊断与调控", "建模方法说明"],
-        label_visibility="collapsed",
-    )
-    selected_id = None
-    if mode == "示范案例":
-        st.markdown("---")
-        st.markdown("### 示范案例")
-        selected_id = st.radio(
-            "请选择一个示范案例",
-            options=list(CASES.keys()),
-            format_func=lambda cid: CASES[cid]["label"],
-            label_visibility="collapsed",
-        )
+# ===== 多页平台:按研究维度分组 =====
+def page_home():
+    st.markdown("### 平台概览")
+    st.write("健康城市规划与智能评估平台围绕健康城市研究的多个维度,提供基于上海实测数据与"
+             "机器学习模型的交互式分析工具,支撑规划方案的健康影响研判与调控。从左侧导航按维度进入各工具。")
+    cards = [("🌡️ 健康风险", "热相关重症风险诊断:建成环境 → 地表温度 → 中暑重症化风险,可局部改造模拟。"),
+             ("🚑 健康资源", "急救站布局模拟:在重症风险底图上模拟新增/调整急救站的改善效果。"),
+             ("🚶 健康行为", "体力活动、绿地使用、出行暴露、高温避险行为(建设中)。"),
+             ("🌳 健康影响评估", "绿地干预的热暴露健康影响(HIA):示范案例与自定义地块评估。")]
+    cols = st.columns(2)
+    for i, (t, d) in enumerate(cards):
+        with cols[i % 2]:
+            st.markdown(
+                f"<div style='background:#F6FCF8;border:1px solid #DCEEE3;border-left:4px solid "
+                f"{HEALTH_GREEN};border-radius:10px;padding:1rem 1.1rem;margin-bottom:0.9rem;min-height:120px'>"
+                f"<div style='font-size:1.1rem;font-weight:700;color:{GREEN_DEEP}'>{t}</div>"
+                f"<div style='color:#5a7a66;font-size:0.92rem;margin-top:.45rem;line-height:1.6'>{d}</div></div>",
+                unsafe_allow_html=True)
+    st.caption("数据:上海 100m 实测栅格(地表温度/绿地/建成/人口)、中暑病例、急救与纳凉设施等。"
+               "方法与局限见「建模方法说明」。")
 
-# ===== 主区 =====
-if mode == "示范案例":
-    case = CASES[selected_id]
-    # 案例标签 + 标题 + 背景
+
+def page_hia_cases():
+    st.markdown("## 健康影响评估 · 绿地干预示范案例")
+    cid = st.selectbox("选择示范案例", list(CASES.keys()),
+                       format_func=lambda c: CASES[c]["label"])
+    case = CASES[cid]
     st.markdown(
-        f"""
-        <span style="background:{case['tag_color']}; color:white; padding:2px 10px;
-                     border-radius:10px; font-size:0.85rem;">{case['tag']}</span>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(f"## {case['project_name']}")
+        f"<span style='background:{case['tag_color']};color:white;padding:2px 10px;"
+        f"border-radius:10px;font-size:0.85rem;'>{case['tag']}</span>", unsafe_allow_html=True)
+    st.markdown(f"### {case['project_name']}")
     st.caption(f"{case['city']} · {case['district']} · {case['subdistrict']}")
     st.write(case["background"])
     st.markdown("---")
     render_case_flow(case, show_map=True)
-elif mode == "自定义评估":
-    render_custom_mode()
-elif mode == "热相关健康风险诊断与调控":
-    render_heat_risk()
-else:
-    render_methodology()
+
+
+def page_behavior():
+    st.markdown("## 健康行为")
+    st.info("本维度正在建设中,敬请期待。")
+    st.markdown("**规划纳入**:居民体力活动、绿地使用、出行方式与暴露、高温避险行为等,"
+                "及其与建成环境、气候的关系分析。如有相关数据(如手机信令、问卷、可穿戴),可接入本维度建模。")
+
+
+def page_about():
+    st.markdown("## 关于平台")
+    st.markdown(
+        "- **建设单位**:同济大学建筑与城市规划学院 · 健康城市实验室\n"
+        "- **研究维度**:健康风险 / 健康资源 / 健康行为 / 健康影响评估\n"
+        "- **数据**:上海 100m 实测栅格(地表温度、绿地、建成、人口)、60+ 中暑病例、急救分站与纳凉设施等\n"
+        "- **方法**:机器学习(随机森林 / 逻辑回归)+ 空间分析;详见「建模方法说明」\n"
+        "- **定位**:研究与规划辅助研判工具,不替代正式环境健康风险评估。")
+
+
+nav = st.navigation({
+    "平台首页": [st.Page(page_home, title="首页", icon="🏠", default=True)],
+    "健康风险": [st.Page(page_health_risk, title="热相关重症风险", icon="🌡️")],
+    "健康资源": [st.Page(page_health_resource, title="急救站布局模拟", icon="🚑")],
+    "健康行为": [st.Page(page_behavior, title="建设中", icon="🚶")],
+    "健康影响评估": [st.Page(page_hia_cases, title="绿地干预 · 示范案例", icon="🌳"),
+                 st.Page(render_custom_mode, title="自定义地块评估", icon="✏️")],
+    "方法与关于": [st.Page(render_methodology, title="建模方法说明", icon="📖"),
+               st.Page(page_about, title="关于平台", icon="ℹ️")],
+})
+nav.run()
