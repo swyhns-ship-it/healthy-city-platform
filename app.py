@@ -31,16 +31,15 @@ render_banner()
 
 nav = st.navigation({
     "平台首页": [st.Page(page_home, title="首页", icon="🏠", default=True)],
-    "健康风险": [st.Page(page_health_risk, title="热相关重症风险", icon="🌡️"),
-             st.Page(page_heatcase_map, title="中暑病例风险地图", icon="🗺️"),
-             st.Page(page_heatroute, title="凉爽路径规划", icon="🧭")],
-    "健康资源": [st.Page(page_health_resource, title="急救站布局模拟", icon="🚑"),
-             st.Page(page_ems_response, title="急救反应时间预测", icon="⏱️"),
+    "健康风险": [st.Page(page_heatcase_map, title="中暑风险地图", icon="🗺️"),
+             st.Page(page_health_risk, title="热相关重症风险诊断与规划调控", icon="🌡️"),
+             st.Page(page_heatroute, title="清凉路径规划", icon="🧭")],
+    "健康资源": [st.Page(page_ems_response, title="急救反应时间预测", icon="⏱️"),
+             st.Page(page_health_resource, title="急救站布局模拟", icon="🚑"),
              st.Page(page_facility_layout, title="设施配置优化", icon="📍")],
-    "健康行为": [st.Page(page_bike, title="共享单车骑行优化", icon="🚲")],
+    "健康行为": [st.Page(page_bike, title="骑行潜力与建成环境优化", icon="🚲")],
     "健康影响评估": [st.Page(render_custom_mode, title="绿地规划健康影响评估", icon="🌳"),
                  st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮")],
-    "方法与关于": [st.Page(render_methodology, title="建模方法说明", icon="📖"),
-               st.Page(page_about, title="关于平台", icon="ℹ️")],
+    "关于": [st.Page(page_about, title="关于平台", icon="ℹ️")],
 })
 nav.run()

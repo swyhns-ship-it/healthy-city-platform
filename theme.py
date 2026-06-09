@@ -150,7 +150,7 @@ def render_banner():
             健康城市规划与智能评估平台
           </div>
           <div style="color:#5a7a66; font-size:0.9rem;">
-            AI 辅助 · 热暴露—健康影响量化 (HIA) 演示系统
+            AI 辅助 · 健康风险-资源-行为规划调控 · 演示系统
           </div>
         </div>
         """,
