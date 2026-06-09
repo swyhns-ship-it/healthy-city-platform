@@ -19,6 +19,7 @@ from views.health_risk import page_health_risk
 from views.heatcase_map import page_heatcase_map
 from views.heatroute import page_heatroute
 from views.health_resource import page_health_resource
+from views.ems_response import page_ems_response
 from views.cooling import page_cooling_layout
 from views.hia import page_hia_cases, render_custom_mode
 from views.methodology import render_methodology
@@ -32,6 +33,7 @@ nav = st.navigation({
              st.Page(page_heatcase_map, title="中暑病例风险地图", icon="🗺️"),
              st.Page(page_heatroute, title="凉爽路径规划", icon="🧭")],
     "健康资源": [st.Page(page_health_resource, title="急救站布局模拟", icon="🚑"),
+             st.Page(page_ems_response, title="急救反应时间预测", icon="⏱️"),
              st.Page(page_cooling_layout, title="纳凉设施布局优化", icon="❄️")],
     "健康行为": [st.Page(page_behavior, title="建设中", icon="🚶")],
     "健康影响评估": [st.Page(page_hia_cases, title="绿地干预 · 示范案例", icon="🌳"),

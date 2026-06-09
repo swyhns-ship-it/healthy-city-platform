@@ -3,9 +3,12 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.venv_anaconda_old/
 
 # 离线分析中间产物(运行时不需要,体积大)
 analysis/out/
+# EMS 训练表(急救出车数据,只离线建模用;运行时已有 ems_layers.npz/ems_model.joblib)
+120data_demo.csv
 *.pkl
 pollution_grids.npz
 pollution_*.joblib
