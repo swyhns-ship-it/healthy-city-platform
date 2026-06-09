@@ -137,13 +137,16 @@ def page_ems_response():
     with colmap:
         st_folium(_result_map(res["station"], incident, routes, best_i),
                   key="ems_result_map", width=None, height=440, returned_objects=[])
-        saved = (routes[baidu_i]["pred"]["seconds"] - sec) / 60 if baidu_i != best_i else 0
-        msg = (f"🟢 最近急救站(直线 {res['sdist']/1000:.1f}km)→ 🔴 事发点。"
-               f"共比选 {len(routes)} 条候选,**红粗线=模型预测最短**,灰细线为备选。")
-        if baidu_i != best_i and saved > 0.1:
-            msg += f" 最短路线比百度默认推荐快约 **{saved:.1f} 分**。"
-        elif baidu_i == best_i:
-            msg += " 本例百度默认推荐即为模型预测最短。"
+        head = f"🟢 最近急救站(直线 {res['sdist']/1000:.1f}km)→ 🔴 事发点。"
+        if len(routes) == 1:
+            msg = head + "百度对该起终点仅返回 1 条可行驾车路线(红线)。"
+        else:
+            msg = head + f"共 {len(routes)} 条真实备选,**红粗线=模型预测最短**,灰细线为备选。"
+            saved = (routes[baidu_i]["pred"]["seconds"] - sec) / 60
+            if baidu_i != best_i and saved > 0.1:
+                msg += f" 最短路线比百度默认推荐快约 **{saved:.1f} 分**。"
+            elif baidu_i == best_i:
+                msg += " 本例百度默认推荐即为模型预测最短。"
         st.caption(msg)
     with colres:
         st.markdown(
