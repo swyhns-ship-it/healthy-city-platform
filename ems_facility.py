@@ -16,7 +16,7 @@ from scipy.spatial import cKDTree
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _STATE = None
 
-WEIGHT_SCHEMES = {"pop": "总人口", "elderly": "老年人口(60+)", "equal": "均等"}
+WEIGHT_SCHEMES = {"pop": "总人口", "elderly": "老年人口(70+)", "equal": "均等"}
 DEDUP_DIST = 200.0
 # 达标 ART 阈值(楼面加权均值;ART 序数 4min=0/8min=1/12min=2/延误=3)
 ART_THR = {"≤4分钟": 0.5, "≤8分钟": 1.5, "≤12分钟": 2.5}
