@@ -1,0 +1,52 @@
+# -*- coding: utf-8 -*-
+"""简单静态页:平台首页 / 健康行为(占位)/ 关于平台。"""
+import streamlit as st
+
+from theme import page_header
+
+
+def page_home():
+    page_header(
+        "平台概览",
+        "围绕健康城市研究的多个维度,提供基于上海实测数据与机器学习模型的交互式分析工具,"
+        "支撑规划方案的健康影响研判与调控。从左侧导航按维度进入各工具。")
+
+    # —— 数据概览:横排统计胶囊 ——
+    stats = [("60.7 万", "100m 实测网格"), ("R² 0.74", "地表温度模型精度"),
+             ("287 例", "中暑病例样本"), ("202 个", "现状急救站")]
+    chips = "".join(
+        f"<div class='stat-chip'><div class='num'>{n}</div><div class='lab'>{l}</div></div>"
+        for n, l in stats)
+    st.markdown(f"<div class='stat-strip'>{chips}</div>", unsafe_allow_html=True)
+
+    # —— 四维度卡片 ——
+    cards = [("🌡️ 健康风险", "热相关重症风险诊断:建成环境 → 地表温度 → 中暑重症化风险,可局部改造模拟。"),
+             ("🚑 健康资源", "急救站布局模拟:在重症风险底图上模拟新增/调整急救站的改善效果。"),
+             ("🚶 健康行为", "体力活动、绿地使用、出行暴露、高温避险行为(建设中)。"),
+             ("🌳 健康影响评估", "绿地干预的热暴露健康影响(HIA):示范案例与自定义地块评估。")]
+    cols = st.columns(2)
+    for i, (t, d) in enumerate(cards):
+        with cols[i % 2]:
+            st.markdown(
+                f"<div class='home-card'><div class='home-card-title'>{t}</div>"
+                f"<div class='home-card-desc'>{d}</div></div>",
+                unsafe_allow_html=True)
+    st.caption("数据:上海 100m 实测栅格(地表温度/绿地/建成/人口)、中暑病例、急救与纳凉设施等。"
+               "方法与局限见「建模方法说明」。")
+
+
+def page_behavior():
+    page_header("健康行为")
+    st.info("本维度正在建设中,敬请期待。")
+    st.markdown("**规划纳入**:居民体力活动、绿地使用、出行方式与暴露、高温避险行为等,"
+                "及其与建成环境、气候的关系分析。如有相关数据(如手机信令、问卷、可穿戴),可接入本维度建模。")
+
+
+def page_about():
+    page_header("关于平台")
+    st.markdown(
+        "- **建设单位**:同济大学建筑与城市规划学院 · 健康城市实验室\n"
+        "- **研究维度**:健康风险 / 健康资源 / 健康行为 / 健康影响评估\n"
+        "- **数据**:上海 100m 实测栅格(地表温度、绿地、建成、人口)、60+ 中暑病例、急救分站与纳凉设施等\n"
+        "- **方法**:机器学习(随机森林 / 逻辑回归)+ 空间分析;详见「建模方法说明」\n"
+        "- **定位**:研究与规划辅助研判工具,不替代正式环境健康风险评估。")
