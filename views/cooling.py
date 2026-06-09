@@ -7,6 +7,7 @@ import folium
 from streamlit_folium import st_folium
 
 import cooling_mclp
+import ems_facility
 from geo import _add_basemap, _lerp_hex
 from theme import HEALTH_GREEN, GREEN_DEEP, page_header
 
@@ -99,10 +100,9 @@ def build_cooling_map(res, show_existing=False, basemap="街道地图"):
     return m
 
 
-def page_cooling_layout():
-    """健康资源 · 纳凉设施布局优化(MCLP 最大覆盖选址 + 街道公平性)。"""
-    page_header(
-        "健康资源 · 纳凉设施布局优化",
+def _render_cooling():
+    """纳凉设施布局优化(MCLP 最大覆盖选址 + 街道公平性)。"""
+    st.caption(
         "基于上海 11,383 处现状纳凉点、16,337 个小区(需求点)与 230 个街道,用 MCLP"
         "(最大覆盖选址)优化新增纳凉设施位置。可调覆盖半径、需求权重、新增数量 K 与街道公平性 α,"
         "现场求解(整数规划),展示覆盖率提升与街道公平性变化。")
@@ -199,3 +199,191 @@ def page_cooling_layout():
             "  α>0 时加入街道公平性软约束,牺牲少量总覆盖换取最弱街道的覆盖提升。\n"
             "- **公平性度量**:各街道加权覆盖率的 Gini 系数(越低越均衡)。\n"
             "- 数据为上海实测,模型用于规划阶段的设施布局**辅助研判**,非最终选址依据。")
+
+
+# ═══════════════════════ EMS 急救设施配置(同 MCLP,达标由 ART 定义) ═══════════════════════
+@st.cache_data(show_spinner=False)
+def _ems_base(art_thr, scheme):
+    return ems_facility.base_stats(art_thr, scheme)
+
+
+@st.cache_data(show_spinner="正在求解 MCLP…")
+def _ems_solve(cover, art_thr, scheme, K, alpha):
+    return ems_facility.solve(cover, art_thr, scheme, K, alpha)
+
+
+@st.cache_data(show_spinner="正在批量求解各 K…")
+def _ems_sweep(cover, art_thr, scheme, alpha):
+    return ems_facility.sweep(cover, art_thr, scheme, alpha=alpha)
+
+
+def build_ems_facility_map(res, show_existing=True, basemap="街道地图"):
+    """EMS 设施选址地图:街道达标率 choropleth + 新增选址(★+服务圈)+ 现状站 + 新增覆盖格。"""
+    m = folium.Map(location=[31.20, 121.47], zoom_start=11, tiles=None, control_scale=True)
+    _add_basemap(m, basemap)
+
+    sa = res["street_after"]; sb = res["street_before"]
+    vals = [v for v in sa.values() if np.isfinite(v)]
+    lo, hi = (min(vals), max(vals)) if vals else (0.0, 1.0)
+    gj = _cooling_geojson()
+    feats = []
+    for f in gj["features"]:
+        nm = f["properties"]["NAME"]
+        if nm not in sa:
+            continue
+        cb, ca = sb.get(nm), sa.get(nm)
+        feats.append({"type": "Feature", "geometry": f["geometry"], "properties": {
+            "NAME": nm,
+            "优化前": "—" if cb is None or not np.isfinite(cb) else f"{cb*100:.1f}%",
+            "优化后": "—" if ca is None or not np.isfinite(ca) else f"{ca*100:.1f}%"}})
+    folium.GeoJson(
+        {"type": "FeatureCollection", "features": feats},
+        style_function=lambda ft: {
+            "fillColor": _cov_color(sa.get(ft["properties"]["NAME"]), lo, hi),
+            "color": "#9ec7ad", "weight": 0.5, "fillOpacity": 0.7},
+        highlight_function=lambda ft: {"weight": 2, "color": HEALTH_GREEN},
+        tooltip=folium.GeoJsonTooltip(fields=["NAME", "优化前", "优化后"],
+                                      aliases=["街道", "达标率(前)", "达标率(后)"])).add_to(m)
+
+    s = ems_facility._state()
+    # 现状 202 急救站(灰)
+    if show_existing:
+        for lon, lat in s["ems_ll"]:
+            folium.CircleMarker([lat, lon], radius=2.5, color="#444", weight=1,
+                                fill=True, fill_color="#999", fill_opacity=0.85,
+                                tooltip="现状急救站").add_to(m)
+    # 新增覆盖的欠服务格(蓝)
+    if len(res["newly_idx"]):
+        for lon, lat in s["dem_ll"][res["newly_idx"]]:
+            folium.CircleMarker([lat, lon], radius=2, color="#1f6feb", weight=0,
+                                fill=True, fill_color="#1f6feb", fill_opacity=0.6).add_to(m)
+    # 新增选址 ★ + 服务圈
+    for (lon, lat), jd in zip(res["sel_ll"], res["sel_jd"]):
+        folium.Circle([lat, lon], radius=res["cover_dist"], color="#E8731F", weight=1,
+                      fill=True, fill_color="#E8731F", fill_opacity=0.06).add_to(m)
+        folium.Marker(
+            [lat, lon],
+            icon=folium.DivIcon(
+                html="<div style='font-size:20px;line-height:20px;color:#E8731F;"
+                     "text-shadow:0 0 3px #fff,0 0 2px #000'>★</div>",
+                icon_size=(20, 20), icon_anchor=(10, 10)),
+            tooltip=f"新增急救站 · {jd}").add_to(m)
+    return m
+
+
+def _render_ems_facility():
+    """EMS 急救设施配置优化(MCLP;达标由 ART 急救反应时间预测定义)。"""
+    summ = ems_facility.data_summary()
+    st.caption(
+        f"基于外环内 {summ['n_dem']:,} 个需求格(25.6 万栋建筑聚合,总人口 {summ['pop_total']/1e4:.0f} 万 / "
+        f"老年 {summ['elderly_total']/1e4:.0f} 万)、{summ['n_ems']} 个现状急救站与 {summ['n_jiedao']} 个街道。"
+        "**达标与否由 ART 急救反应时间预测定义**(当前反应时间较差的格=欠服务),用 MCLP 优化新增急救站位置。")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        cover = st.slider("覆盖半径(米)", 500, 3000, 1500, 100, key="ems_cover",
+                          help="新增急救站可有效改善反应时间的范围(救护车驾车可达距离)")
+    with c2:
+        thr_label = st.selectbox("达标 ART 阈值", list(ems_facility.ART_THR.keys()), index=1,
+                                 key="ems_thr", help="反应时间达到此档以内视为已达标,否则为欠服务")
+    with c3:
+        scheme = st.selectbox("需求权重", list(ems_facility.WEIGHT_SCHEMES.keys()),
+                              format_func=lambda k: ems_facility.WEIGHT_SCHEMES[k], key="ems_scheme",
+                              help="按总人口、老年人口或均等衡量一个需求格的优先级")
+    with c4:
+        alpha = st.slider("街道公平性 α", 0.0, 1.0, 0.0, 0.1, key="ems_alpha",
+                          help="0=纯总改善最大化;越大越向达标率最低的街道倾斜")
+    art_thr = ems_facility.ART_THR[thr_label]
+
+    base = _ems_base(art_thr, scheme)
+    st.caption(f"现状(不新增):加权达标率 **{base['coverage']*100:.2f}%**、"
+               f"欠服务格 {base['n_underserved']:,}/{base['n_dem']:,}、街道公平性 Gini {base['gini']:.3f}。")
+
+    tab1, tab2 = st.tabs(["单方案求解 · 选址地图", "K 扫描 · 边际效益与拐点"])
+
+    with tab1:
+        K = st.slider("新增急救站数量 K", 1, 50, 10, 1, key="ems_K")
+        res = _ems_solve(cover, art_thr, scheme, int(K), alpha)
+        d_cov = (res["coverage_after"] - res["coverage_before"]) * 100
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("加权达标率", f"{res['coverage_after']*100:.2f}%", delta=f"{d_cov:+.2f} pct")
+        m2.metric("达标需求格", f"{res['count_after']:,}",
+                  delta=f"+{res['count_after'] - res['count_before']:,}")
+        m3.metric("街道公平性 Gini", f"{res['gini_after']:.3f}",
+                  delta=f"{res['gini_after'] - res['gini_before']:+.3f}", delta_color="inverse")
+        m4.metric("新增达标格", f"{res['n_newly']:,} 个")
+
+        colmap, colside = st.columns([1.5, 1], gap="large")
+        with colmap:
+            cc1, cc2 = st.columns([1, 1])
+            with cc1:
+                bm = st.selectbox("底图", ["街道地图", "浅色地图"], key="ems_base",
+                                  label_visibility="collapsed")
+            with cc2:
+                show_ex = st.checkbox("叠加现状急救站", value=True, key="ems_ex")
+            st_folium(build_ems_facility_map(res, show_ex, bm), key="ems_fac_map",
+                      width=None, height=540, returned_objects=[])
+            st.caption("街道填色=优化后加权达标率(越绿越高)。🟠★ 新增急救站 + 服务圈;"
+                       "🔵 新增达标的需求格;⚫ 现状急救站。悬停街道看优化前后达标率。")
+        with colside:
+            st.markdown("**达标率提升最大的街道**")
+            sb, sa = res["street_before"], res["street_after"]
+            rows = []
+            for nm in sa:
+                if np.isfinite(sa[nm]) and np.isfinite(sb.get(nm, np.nan)):
+                    rows.append({"街道": nm, "优化前": sb[nm], "优化后": sa[nm],
+                                 "提升": sa[nm] - sb[nm]})
+            df = pd.DataFrame(rows).sort_values("提升", ascending=False).head(10)
+            df["优化前"] = (df["优化前"] * 100).round(1)
+            df["优化后"] = (df["优化后"] * 100).round(1)
+            df["提升"] = (df["提升"] * 100).round(2)
+            st.dataframe(df.reset_index(drop=True), hide_index=True, use_container_width=True,
+                         height=388)
+            st.markdown("**本次选址街道**")
+            st.caption("、".join(res["sel_jd"]) or "—")
+
+    with tab2:
+        st.caption("固定上面的覆盖半径/阈值/权重/α,扫描 K=5…45,看边际达标增量与街道公平性随 K 变化,"
+                   "并自动识别「拐点」给出建议 K。")
+        rows = _ems_sweep(cover, art_thr, scheme, alpha)
+        ek = ems_facility.elbow_k(rows)
+        df = pd.DataFrame(rows)
+        df["达标率%"] = (df["coverage"] * 100).round(2)
+        df["边际增量%"] = (df["marginal"] * 100).round(2)
+        df["街道Gini"] = df["gini"].round(3)
+        st.success(f"拐点建议:新增约 **K = {ek}** 个,之后边际达标增量明显递减。")
+        g1, g2 = st.columns(2)
+        with g1:
+            st.markdown("**K vs 加权达标率**")
+            st.line_chart(df.set_index("K")["达标率%"], height=240)
+        with g2:
+            st.markdown("**各 K 的边际达标增量**")
+            st.bar_chart(df.set_index("K")["边际增量%"], height=240)
+        st.markdown("**K vs 街道公平性 Gini**(越低越公平)")
+        st.line_chart(df.set_index("K")["街道Gini"], height=220)
+        st.dataframe(df[["K", "达标率%", "边际增量%", "街道Gini"]], hide_index=True,
+                     use_container_width=True)
+
+    with st.expander("模型与方法(EMS 设施 MCLP)", expanded=False):
+        st.markdown(
+            "- **模型**:最大覆盖选址问题(MCLP),整数规划,PuLP/CBC 求解,与纳凉设施同一套算法。\n"
+            "- **需求点**:外环内 25.6 万栋建筑按 ~200m 格网聚合(14,625 格),权重可选 总人口 / 老年人口 / 均等。\n"
+            "- **达标定义**:每格当前 **ART 急救反应时间预测**(楼面加权均值)≤ 所选阈值即已达标,否则为欠服务。\n"
+            "- **覆盖**:欠服务格到任一**新增**急救站 ≤ 覆盖半径,即视为被改善达标。\n"
+            "- **候选点**:欠服务格质心 + 街道质心,200m 去重。\n"
+            "- **目标**:`max (1-α)·Σ wᵢyᵢ + α·min_d(街道达标率)`,约束新增设施数 = K。\n"
+            "- **公平性度量**:各街道加权达标率的 Gini(越低越均衡)。\n"
+            "- ART 来自上海 120 急救数据训练的关联性模型,人口/老年来自实测栅格;结果用于规划**辅助研判**,非最终选址依据。")
+
+
+def page_facility_layout():
+    """健康资源 · 设施配置优化(纳凉设施 / EMS 急救设施,统一 MCLP 框架,两个选项卡)。"""
+    page_header(
+        "健康资源 · 设施配置优化",
+        "用 MCLP(最大覆盖选址)+ 街道公平性,优化公共健康设施的新增布局。两类设施:"
+        "**纳凉设施**(降低高温暴露)与 **EMS 急救设施**(改善急救反应时间)。")
+    t_cool, t_ems = st.tabs(["❄️ 纳凉设施", "🚑 EMS 急救设施"])
+    with t_cool:
+        _render_cooling()
+    with t_ems:
+        _render_ems_facility()
