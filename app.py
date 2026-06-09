@@ -21,7 +21,9 @@ from views.heatroute import page_heatroute
 from views.health_resource import page_health_resource
 from views.ems_response import page_ems_response
 from views.cooling import page_facility_layout
+from views.bike import page_bike
 from views.hia import page_hia_cases, render_custom_mode
+from views.hia_calc import page_hia_calc
 from views.methodology import render_methodology
 
 inject_css()
@@ -35,9 +37,9 @@ nav = st.navigation({
     "健康资源": [st.Page(page_health_resource, title="急救站布局模拟", icon="🚑"),
              st.Page(page_ems_response, title="急救反应时间预测", icon="⏱️"),
              st.Page(page_facility_layout, title="设施配置优化", icon="📍")],
-    "健康行为": [st.Page(page_behavior, title="建设中", icon="🚶")],
-    "健康影响评估": [st.Page(page_hia_cases, title="绿地干预 · 示范案例", icon="🌳"),
-                 st.Page(render_custom_mode, title="自定义地块评估", icon="✏️")],
+    "健康行为": [st.Page(page_bike, title="共享单车骑行优化", icon="🚲")],
+    "健康影响评估": [st.Page(render_custom_mode, title="绿地规划健康影响评估", icon="🌳"),
+                 st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮")],
     "方法与关于": [st.Page(render_methodology, title="建模方法说明", icon="📖"),
                st.Page(page_about, title="关于平台", icon="ℹ️")],
 })

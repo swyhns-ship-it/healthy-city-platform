@@ -315,7 +315,7 @@ def build_custom_case(poly_latlng, direction, years, project_name, field):
 def render_custom_mode():
     """自定义模式:绘制多边形 → 模型预测逐格 ΔLST(含外溢)→ 逐格评估。"""
     page_header(
-        "自定义评估 · 在地图上绘制地块",
+        "绿地规划健康影响评估 · 在地图上绘制地块",
         "用地图左上角绘制工具(多边形 / 矩形)画出目标地块,系统调用上海 100m 地温模型"
         "自动预测降温幅度、空间外溢范围与受影响人口。仅支持上海市范围。")
 
