@@ -15,6 +15,15 @@ streamlit run app.py
 ```
 本机(家里)是 Anaconda 建的 venv + run.ps1(处理 OpenSSL DLL);**别的机器用干净的 Python 3.11 + venv 即可,无需那套 DLL 折腾**。
 
+## 密钥 / 运行时配置(**不随 git 同步,每台机器/云端各配一次**)
+- **百度地图 AK**:凉爽路径规划的「全市·百度路线」模式 + 地址搜索 需要。写入 `.streamlit/secrets.toml`:
+  ```toml
+  baidu_ak = "你的AK"
+  ```
+  该文件已被 .gitignore(**换机器不会同步,要重配**);云端在 Streamlit Cloud → App → Settings → Secrets 填同样内容。
+  AK 须**放开服务端调用**(IP 白名单设 `0.0.0.0/0` 或用 SN 签名),否则云端/服务端调不通。也可在页面密码框临时输入(仅当次会话)。
+  「中心城区·绿荫路网」模式 + 地图点选 **不需要 AK**。
+
 ## 架构(分层:入口 / 共享层 / 页面 / 引擎,st.navigation 多页,按研究维度分组)
 **代码分层**(2026-06 由 1546 行的单体 app.py 拆分):
 - `app.py`(~40 行):瘦身入口 —— set_page_config + 注入主题 + banner + st.navigation 注册页面。
@@ -55,7 +64,12 @@ MCLP 选址原始数据(cool/residence1/jiedao shp,UTM 51N):来自 `MCLP.zip`,�
 两台电脑都通过 GitHub 同步:
 - **开工前**:`git pull`
 - **收工前**:`git add -A && git commit -m "..." && git push`
-- 切忌两边都留未提交的改动 → 冲突。国内 push 大文件若被重置:`git config http.postBuffer 1048576000; git config http.version HTTP/1.1`。
+- 切忌两边都留未提交的改动 → 冲突。
+- **国内 push 大文件被重置(OpenSSL errno 10053)** → 仓库本地配:`git config http.postBuffer 1048576000; git config http.version HTTP/1.1; git config http.lowSpeedLimit 0; git config http.lowSpeedTime 999999`,再多试几次 / 挂代理(`git config --global http.proxy http://127.0.0.1:端口`)。这些是本地 `.git/config`,**不随仓库同步,每台机器要各设一次**。
+- 新机器首次 push 需配 git 身份:`git config user.name swyhns; git config user.email 64192494+swyhns@users.noreply.github.com`;凭据走 GCM(manager-core),首次会弹 GitHub 登录窗。
 
 ## 待办/方向
-首页做实(亮点/数据概览/案例缩略图);代码进一步分层(engines/ 包、pages/);健康资源扩展(纳凉点/绿地/医疗可达性);长期:静态门户站(Hugo Academic/al-folio)做成果展示 + 链接本平台。
+- ✅ 已完成(2026-06):代码分层(theme/geo/views)、视觉打磨(page_header/胶囊条/卡片)、纳凉 MCLP、中暑病例风险地图、凉爽路径规划(百度+绿荫路网双模式)。
+- 首页可再做实(案例缩略图/成果亮点);健康行为维度待数据(手机信令/问卷/可穿戴)。
+- 路径规划:绕行/绿荫备选可加"经某公园/绿廊"标注;绿荫路网范围外可自动回落百度。
+- 长期:静态门户站(Hugo Academic/al-folio)做成果展示 + 链接本平台。
