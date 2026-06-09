@@ -16,6 +16,7 @@ heat_ems_points.npz(202 个现状急救站)。坐标:等距圆柱近似把 WGS84
 (以研究区中心为原点),buffer/求交在米制下做,纯 numpy/scipy/shapely,不依赖 geopandas。
 """
 import os
+import math
 
 import numpy as np
 import joblib
@@ -132,6 +133,90 @@ def compute_features(route_lonlat):
     return {"Distance_m": distance, "Road4_Length_m": float(road_len),
             "POPDEN_phm2": float(popden), "FAR": float(farv),
             "MediPOIDen_nhm2": float(medi)}
+
+
+def _bearing(o, d):
+    lon1, lat1 = math.radians(o[0]), math.radians(o[1])
+    lon2, lat2 = math.radians(d[0]), math.radians(d[1])
+    dlon = lon2 - lon1
+    y = math.sin(dlon) * math.cos(lat2)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(dlon)
+    return math.degrees(math.atan2(y, x))
+
+
+def _offset_point(lng, lat, bearing_deg, dist_m):
+    R = 6371000.0
+    br = math.radians(bearing_deg); dr = dist_m / R
+    lat1, lon1 = math.radians(lat), math.radians(lng)
+    lat2 = math.asin(math.sin(lat1) * math.cos(dr) + math.cos(lat1) * math.sin(dr) * math.cos(br))
+    lon2 = lon1 + math.atan2(math.sin(br) * math.sin(dr) * math.cos(lat1),
+                             math.cos(dr) - math.sin(lat1) * math.sin(lat2))
+    return (math.degrees(lon2), math.degrees(lat2))
+
+
+def _plan_driving_v2(o_wgs, d_wgs, ak, timeout=8):
+    """百度 direction/v2/driving + alternatives:同起终点的多条真实备选路线(走不同道路)。
+    输入 WGS84 (lng,lat);返回 [{path(WGS84), distance, duration}]。"""
+    import requests
+    import geo
+    from heatroute import _extract_path
+    r = requests.get("https://api.map.baidu.com/direction/v2/driving", params={
+        "origin": f"{o_wgs[1]:.6f},{o_wgs[0]:.6f}",
+        "destination": f"{d_wgs[1]:.6f},{d_wgs[0]:.6f}",
+        "coord_type": "wgs84", "alternatives": 1, "ak": ak}, timeout=timeout).json()
+    if r.get("status") != 0:
+        raise RuntimeError(f"百度v2 status={r.get('status')}:{r.get('message')}")
+    out = []
+    for rt in r.get("result", {}).get("routes", []):
+        path = [geo.bd09_to_wgs(x, y) for x, y in _extract_path(rt)]
+        if len(path) >= 2:
+            out.append({"path": path, "distance": rt.get("distance"),
+                        "duration": rt.get("duration")})
+    return out
+
+
+def plan_candidate_routes(station, incident, ak, extra_offsets=(450,), timeout=8):
+    """生成多条候选驾车路线:百度 v2 真实替代路线(主推+备选)+ 少量小偏移绕行补充多样性。
+    station/incident: (lng,lat) WGS84。返回去重后的路线列表(每条含 path/distance/duration/kind)。
+    模块只负责"生成不同的真实路线",到场时间由模型对每条独立预测后再比较取最短。"""
+    import heatroute
+    try:
+        v2 = _plan_driving_v2(station, incident, ak, timeout)
+    except Exception:
+        v2 = []
+    if not v2:   # v2 不可用则回退 directionlite 直达
+        v2 = list(heatroute.plan_routes(station, incident, mode_zh="驾车", ak=ak, timeout=timeout))
+    if not v2:
+        return []
+    routes = []
+    for j, r in enumerate(v2):
+        r = dict(r); r["kind"] = "百度主推" if j == 0 else "百度备选"; routes.append(r)
+
+    # 走廊两侧小偏移途经点 → 强制几条不同走法补充(可能在模型下更优)
+    brg = _bearing(station, incident)
+    mlng = station[0] + (incident[0] - station[0]) * 0.5
+    mlat = station[1] + (incident[1] - station[1]) * 0.5
+    for off in extra_offsets:
+        for side in (90, -90):
+            wp = _offset_point(mlng, mlat, brg + side, off)
+            try:
+                l1 = heatroute.plan_routes(station, wp, mode_zh="驾车", ak=ak, timeout=timeout)
+                l2 = heatroute.plan_routes(wp, incident, mode_zh="驾车", ak=ak, timeout=timeout)
+            except Exception:
+                continue
+            if l1 and l2:
+                routes.append({"path": l1[0]["path"] + l2[0]["path"],
+                               "distance": (l1[0]["distance"] or 0) + (l2[0]["distance"] or 0),
+                               "duration": (l1[0]["duration"] or 0) + (l2[0]["duration"] or 0),
+                               "kind": "绕行"})
+    # 去重:按百度里程 ~120m 粒度
+    seen, uniq = set(), []
+    for r in routes:
+        key = round((r["distance"] or 0) / 120)
+        if key in seen:
+            continue
+        seen.add(key); uniq.append(r)
+    return uniq
 
 
 def predict(feat):
