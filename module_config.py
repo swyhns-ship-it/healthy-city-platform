@@ -34,24 +34,52 @@ PAGES = [
 
 LOCKED = {p["key"] for p in PAGES if p.get("locked")}
 
+# 支持"数据打码(演示模式)"的页面 key —— 仅这些页在代码里实现了模糊渲染。
+BLUR_PAGES = ["heatcase"]
+
+
+def _load_all():
+    try:
+        with open(_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+            return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_all(d):
+    with open(_PATH, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=2)
+
 
 def load_disabled():
     """返回被隐藏的页面 key 集合(读不到/出错则视为全部可见)。"""
-    try:
-        with open(_PATH, encoding="utf-8") as f:
-            return set(json.load(f).get("disabled", []))
-    except Exception:
-        return set()
+    return set(_load_all().get("disabled", []))
 
 
 def save_disabled(keys):
-    """写入隐藏列表(锁定页永不写入)。"""
-    keys = sorted(k for k in keys if k not in LOCKED)
-    with open(_PATH, "w", encoding="utf-8") as f:
-        json.dump({"disabled": keys}, f, ensure_ascii=False, indent=2)
+    """写入隐藏列表(锁定页永不写入),保留 blurred 等其它配置。"""
+    d = _load_all()
+    d["disabled"] = sorted(k for k in keys if k not in LOCKED)
+    _save_all(d)
 
 
-def config_json(keys):
-    """供导出的 JSON 文本。"""
-    keys = sorted(k for k in keys if k not in LOCKED)
-    return json.dumps({"disabled": keys}, ensure_ascii=False, indent=2)
+def load_blurred():
+    """返回需要"数据打码"的页面 key 集合。"""
+    return set(_load_all().get("blurred", []))
+
+
+def save_blurred(keys):
+    """写入打码列表,保留 disabled 等其它配置。"""
+    d = _load_all()
+    d["blurred"] = sorted(k for k in keys if k in BLUR_PAGES)
+    _save_all(d)
+
+
+def is_blurred(key):
+    return key in load_blurred()
+
+
+def config_json():
+    """当前 module_config.json 的完整内容(供导出/长期固定)。"""
+    return json.dumps(_load_all(), ensure_ascii=False, indent=2)

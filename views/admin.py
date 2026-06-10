@@ -69,7 +69,24 @@ def page_admin():
     n_on = sum(1 for p in mc.PAGES if p["key"] not in new_disabled)
     st.success(f"当前对访客开放 {n_on} / {len(mc.PAGES)} 个板块。")
 
+    # —— 数据打码(演示模式):把页面的数据展示模糊,客户看得到结构、看不到真实数据 ——
+    st.divider()
+    st.markdown("**🔒 数据打码(演示模式)**")
+    st.caption("打码后该页的数据展示(地图/指标/图表)被模糊,客户看得到页面结构、看不到真实数据。随时可取消。")
+    blurred = mc.load_blurred()
+    new_blurred = set(blurred)
+    for key in mc.BLUR_PAGES:
+        title = next((p["title"] for p in mc.PAGES if p["key"] == key), key)
+        on = st.checkbox(f"对「{title}」数据打码", value=(key in blurred), key=f"blur_{key}")
+        if on:
+            new_blurred.add(key)
+        else:
+            new_blurred.discard(key)
+    if new_blurred != blurred:
+        mc.save_blurred(new_blurred)
+        st.rerun()
+
     with st.expander("⬇ 导出配置(长期固定 / 跨实例持久)"):
         st.caption("云端文件系统是临时的:实例重启/休眠后会恢复为仓库里的 module_config.json。"
                    "要长期固定,把下面内容存为项目根目录的 module_config.json 并提交进仓库。")
-        st.code(mc.config_json(new_disabled), language="json")
+        st.code(mc.config_json(), language="json")

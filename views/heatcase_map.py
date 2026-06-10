@@ -104,6 +104,18 @@ def page_heatcase_map():
         "以热力图、病例点、街道重症比例三种方式可视化热相关健康风险的空间分布。"
         "与「热相关重症风险诊断与规划调控」页(模型推断)互补:此页为实证病例分布。")
 
+    import module_config as mc
+    if mc.is_blurred("heatcase"):
+        st.info("🔒 演示模式:本页数据展示已隐去(打码)。")
+        st.markdown(
+            '<style>'
+            '[data-testid="stMetric"], [data-testid="stDataFrame"], [data-testid="stTable"],'
+            'iframe[title*="folium"], iframe[title*="st_folium"],'
+            '[data-testid="stVegaLiteChart"], [data-testid="stArrowVegaLiteChart"]'
+            '{filter:blur(9px) !important; -webkit-filter:blur(9px) !important;'
+            'pointer-events:none !important; user-select:none !important;}'
+            '</style>', unsafe_allow_html=True)
+
     mt = heatcase.meta()
     occ_labels = mt["occ_labels"]
 
