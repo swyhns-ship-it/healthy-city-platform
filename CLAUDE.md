@@ -6,7 +6,7 @@
 ## 是什么
 Streamlit 多页平台:基于上海 100m 实测栅格 + 机器学习,做城市热环境健康影响评估与调控。
 已部署 Streamlit Community Cloud(repo: github.com/swyhns-ship-it/healthy-city-platform,main 文件 `app.py`,**Python 3.11**)。
-顶部标题「健康城市规划与智能评估平台」。
+顶部标题「健康城市智能规划与评估平台」。
 
 ## 运行
 ```bash
