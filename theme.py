@@ -13,6 +13,9 @@ TONGJI_RED = "#A6192E"        # 同济红(仅作品牌点缀,保留备用)
 
 def inject_css():
     """注入全局样式(字体、指标卡、按钮、侧栏、页头、卡片等)。"""
+    # 防搜索引擎收录(平台仅向导师/合作方开放,不希望被检索到/留缓存快照)
+    st.markdown('<meta name="robots" content="noindex, nofollow, noarchive">',
+                unsafe_allow_html=True)
     st.markdown(
         f"""
         <style>

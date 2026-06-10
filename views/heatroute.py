@@ -107,6 +107,11 @@ def _baidu_section(o, d, ak):
         help="百度对步行/骑行常只返 1 条路线;勾选后用途经点强造更凉备选,代价是多调 API、里程略增。")
 
     if plan:
+        from auth import rate_limit
+        ok, wait = rate_limit("baidu_route", 15, 60)   # 单会话 15 次/分
+        if not ok:
+            st.warning(f"⏳ 路线规划请求过于频繁,请约 {wait}s 后再试。")
+            return
         try:
             with st.spinner("调用百度路线规划 + 计算热暴露…" + ("(含绕行备选,稍候)" if add_detours else "")):
                 routes = heatroute.plan_cool_routes(o, d, mode_zh=mode, ak=ak,

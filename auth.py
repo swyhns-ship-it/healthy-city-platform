@@ -10,10 +10,28 @@
 被 app.py 在 render_banner() 之后、构建导航之前调用。
 """
 import hmac
+import time
 
 import streamlit as st
 
 from theme import HEALTH_GREEN, GREEN_DEEP
+
+
+def rate_limit(bucket, max_calls, window_s):
+    """会话级滑动窗口限流。超限 → 返回 (False, 剩余等待秒);否则记一次 → (True, 0)。
+
+    防口令外泄后被刷爆付费 API(DeepSeek/百度)的账单。注意:基于 st.session_state,
+    **仅在单会话内有效**;跨会话/分布式刷量要靠后台账单上限兜底(已在控制台配额告警)。
+    """
+    now = time.monotonic()
+    key = f"_rl_{bucket}"
+    hist = [t for t in st.session_state.get(key, []) if now - t < window_s]
+    if len(hist) >= max_calls:
+        st.session_state[key] = hist
+        return False, int(window_s - (now - hist[0])) + 1
+    hist.append(now)
+    st.session_state[key] = hist
+    return True, 0
 
 
 def _configured_password():

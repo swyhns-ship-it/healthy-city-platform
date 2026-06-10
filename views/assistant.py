@@ -107,7 +107,16 @@ def _render_ems_result(res):
 
 def _submit(text, key, hidden=False):
     """把一条用户消息发给助手,追加回复,刷新。hidden=True 的消息只发给模型、不在界面显示。"""
+    from auth import rate_limit
     st.session_state.asst_history.append({"role": "user", "content": text, "hidden": hidden})
+    ok, wait = rate_limit("deepseek", 20, 60)   # 单会话 20 次/分
+    if not ok:
+        st.session_state.asst_history.append(
+            {"role": "assistant", "content": f"⏳ 提问有点频繁,请约 {wait}s 后再问。",
+             "page": st.session_state.get("asst_cur_page")})
+        st.session_state.asst_last = {"reply": "", "options": [], "action": {"type": "none"}}
+        st.rerun()
+        return
     try:
         with st.spinner("助手思考中…"):
             data = llm_agent.chat(st.session_state.asst_history, key)
