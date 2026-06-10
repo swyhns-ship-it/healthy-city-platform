@@ -623,6 +623,18 @@ def annotate(pathways):
     return pathways
 
 
+def catalog_lines():
+    """供 LLM 语义匹配的卡片目录(编号 + 题号 + 决定因素关键词)。"""
+    return [f"C{i} [{c['q']}] {'/'.join(c['keys'])}" for i, c in enumerate(CARDS)]
+
+
+def card_ref(i):
+    """按目录编号取卡片的显示信息(note/sources/status),供匹配后挂到路径上。"""
+    c = CARDS[i]
+    return {"note": c.get("note", ""), "sources": c["sources"],
+            "status": c.get("status", "done"), "q": c["q"]}
+
+
 def gaps(pathways):
     """汇总当前匹配不到证据卡片的(机制链 → 题号)去重清单,供专家批量补卡。
     按"题号 + 终末两级链路"去重(一张卡片大致对应一条终末机制链)。"""

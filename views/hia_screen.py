@@ -159,7 +159,7 @@ def page_hia_screen():
                         if c.get("note"):
                             st.caption("　　" + c["note"])
                 else:
-                    st.caption("　📚 机制来源:机制推断 · 待专家补证(可在 hia_evidence.py 的 CARDS 增补)")
+                    st.caption("　📚 机制来源:机制推断 · 待专家补证")
 
     # —— 专家补充自定义路径 ——
     with st.expander("➕ 补充自定义路径(专家手动添加)"):

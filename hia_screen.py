@@ -285,6 +285,60 @@ def compute_items(pathways):
     return items
 
 
+_SYS_MAP = """你是 HIA 证据匹配助手。给你一份"证据卡片目录"(每张:编号 C#、题号、决定因素关键词)
+和一批"因果路径"(每条:编号 P#、题号、机制链)。为每条路径选出机制上相关的卡片编号。
+
+规则:
+- 只能选**题号与路径一致**的卡片;机制方向要对应(决定因素 → 健康结果)。
+- 作为辅助决策工具,适当放宽:只要卡片的**决定因素**与路径中间环节**实质相关**即可入选,
+  目的是给专家更多参考选项。
+- **但宁缺毋滥**:若目录里没有真正针对该路径决定因素的卡片,就**不分配**(cards 留空)。
+  绝不能因为"同题号"就挑一个机制不沾边的卡(例如把"能源支出→传染病"硬配到"医疗废物")。
+- **只能从目录里选编号,不得编造**。
+
+只输出 JSON:{"assignments":[{"p":0,"cards":[3,12]}, ...]}(cards 为卡片编号数组,可空)。"""
+
+
+def map_evidence(pathways, key, timeout=120):
+    """LLM 语义匹配:把每条路径映射到证据库里机制相关的卡片(同题号),并入关键词匹配结果。
+    提高召回、给专家更多选项;只能选库内卡片、锁题号,不编造来源。就地修改 pathways。"""
+    if not pathways:
+        return
+    cat = "\n".join(hia_evidence.catalog_lines())
+    plist = "\n".join(f"P{i} [Q{p['outcome_q']}] " + " → ".join(p["chain"])
+                      for i, p in enumerate(pathways))
+    user = (f"【证据卡片目录】\n{cat}\n\n【因果路径】\n{plist}\n\n"
+            f"请为每条路径匹配机制相关的卡片编号,只输出 JSON。")
+    data = _chat_json(_SYS_MAP, user, key, timeout=timeout, max_tokens=4000, temps=(0.2, 0.5))
+    for a in (data.get("assignments") or []):
+        try:
+            pi = int(a.get("p"))
+        except Exception:
+            continue
+        if not (0 <= pi < len(pathways)):
+            continue
+        p = pathways[pi]
+        qof = f"Q{p.get('outcome_q')}"
+        existing = list(p.get("cards") or [])
+        seen = {tuple(c["sources"]) for c in existing}
+        for ci in (a.get("cards") or []):
+            try:
+                ci = int(ci)
+            except Exception:
+                continue
+            if not (0 <= ci < len(hia_evidence.CARDS)):
+                continue
+            if hia_evidence.CARDS[ci]["q"] != qof:          # 锁同题号,防跨域错配
+                continue
+            ref = hia_evidence.card_ref(ci)
+            tk = tuple(ref["sources"])
+            if tk in seen:
+                continue
+            seen.add(tk)
+            existing.append(ref)
+        p["cards"] = existing[:3]                            # 每条最多 3 张,给专家更多选项
+
+
 def suggest_level_from(items):
     n_yes = sum(1 for x in items if x["answer"] == "是")
     if n_yes >= 4:
@@ -314,7 +368,9 @@ def analyze(doc_text, key, project_name="", progress=None):
     _p("③ 完整性批判与补全…")
     added, summary, level, notes = critique_augment(actions, paths, key)
     paths += _norm_pathways(added, aids, start=len(paths) + 1)
-    hia_evidence.annotate(paths)            # 挂 WHO/meta 级证据卡片(机制端来源)
+    hia_evidence.annotate(paths)            # 关键词匹配证据卡片(快速、保守)
+    _p("④ 匹配证据来源…")
+    map_evidence(paths, key)                # LLM 语义匹配并入(提高召回、给专家更多选项)
 
     items = compute_items(paths)
     if level not in ("很小", "轻度", "重大"):
