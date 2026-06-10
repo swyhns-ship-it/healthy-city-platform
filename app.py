@@ -24,6 +24,7 @@ from views.cooling import page_facility_layout
 from views.bike import page_bike
 from views.hia import page_hia_cases, render_custom_mode
 from views.hia_calc import page_hia_calc
+from views.hia_screen import page_hia_screen
 from views.methodology import render_methodology
 from views.assistant import page_assistant
 from views.friends import page_friends
@@ -45,7 +46,8 @@ pages = {
              st.Page(page_facility_layout, title="设施配置优化", icon="📍")],
     "健康行为": [st.Page(page_bike, title="骑行潜力与建成环境优化", icon="🚲")],
     "健康影响评估": [st.Page(render_custom_mode, title="绿地规划健康影响评估", icon="🌳"),
-                 st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮")],
+                 st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮"),
+                 st.Page(page_hia_screen, title="AI 辅助 HIA", icon="📝")],
     "友情链接": [st.Page(page_friends, title="合作学者工具", icon="🔗")],
     "关于": [st.Page(page_about, title="关于平台", icon="ℹ️")],
 }
