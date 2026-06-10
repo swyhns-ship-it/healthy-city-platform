@@ -384,13 +384,23 @@ def _node_id(prefix, text):
     return prefix + "_" + re.sub(r"\W+", "", text)[:24] + str(abs(hash(text)) % 1000)
 
 
+def _wrap(text, width=7, max_chars=35):
+    """标签按字数折行(DOT 用 \\n 换行):节点变窄变方,压缩整图宽度、改善长宽比、放大有效字号。"""
+    s = str(text).replace('"', "'").replace("\\", "/")
+    if len(s) > max_chars:
+        s = s[:max_chars - 1] + "…"
+    return "\\n".join(s[i:i + width] for i in range(0, len(s), width))
+
+
 def build_dot(actions, pathways):
     """把(已采纳的)路径渲染成 DOT:行动(左)→ 决定因素中间节点 → 结果问题(右)。
-    同名中间节点合并;边按强度着色,假设待证用虚线。"""
+    同名中间节点合并;边按强度着色,假设待证用虚线。标签折行 + 大字号,避免被缩放后看不清。"""
     act_label = {a["id"]: a["action"] for a in actions}
-    lines = ["digraph G {", 'rankdir=LR; ranksep=0.7; nodesep=0.25;',
-             'node [fontname="Microsoft YaHei", fontsize=10];',
-             'edge [fontname="Microsoft YaHei", fontsize=9];']
+    lines = ["digraph G {",
+             'rankdir=LR; ranksep=0.9; nodesep=0.4; splines=true;',
+             'node [fontname="Microsoft YaHei", fontsize=15, shape=box, '
+             'style=rounded, margin="0.14,0.08", color="#9AA0A6"];',
+             'edge [fontname="Microsoft YaHei", fontsize=12, arrowsize=0.9];']
     used_actions, used_q, det_nodes = set(), set(), {}
     edges = []
 
@@ -405,7 +415,6 @@ def build_dot(actions, pathways):
                "中": "#2E9E5B" if p["direction"] == "效益" else "#E07B39",
                "推测": "#9AA0A6"}[p["strength"]]
         style = "dashed" if p["status"] == "假设待证" else "solid"
-        # 节点序列:action -> chain steps... -> Q
         seq = [("A_" + p["action_id"], None)]
         for step in p["chain"]:
             seq.append((det_id(step), step))
@@ -413,24 +422,23 @@ def build_dot(actions, pathways):
         used_actions.add(p["action_id"])
         used_q.add(p["outcome_q"])
         for (n1, _), (n2, _) in zip(seq, seq[1:]):
-            edges.append(f'"{n1}" -> "{n2}" [color="{col}", style={style}, penwidth=1.4];')
+            edges.append(f'"{n1}" -> "{n2}" [color="{col}", style={style}, penwidth=1.8];')
 
-    # 行动节点(左)
+    # 行动节点(左):绿底加粗
     lines.append('{ rank=source;')
     for aid in used_actions:
-        lab = act_label.get(aid, aid).replace('"', "'")[:28]
-        lines.append(f'"A_{aid}" [label="{aid} {lab}", shape=box, style="filled,rounded", '
-                     f'fillcolor="#EAF7EF", color="#1B6B3A"];')
+        lab = _wrap(f"{aid} " + act_label.get(aid, aid), width=8, max_chars=40)
+        lines.append(f'"A_{aid}" [label="{lab}", style="filled,rounded", '
+                     f'fillcolor="#EAF7EF", color="#1B6B3A", fontsize=15];')
     lines.append("}")
-    # 决定因素中间节点
+    # 决定因素中间节点:折行圆角框
     for lab, nid in det_nodes.items():
-        l = lab.replace('"', "'")[:22]
-        lines.append(f'"{nid}" [label="{l}", shape=ellipse, color="#888"];')
-    # 结果问题节点(右)
+        lines.append(f'"{nid}" [label="{_wrap(lab)}"];')
+    # 结果问题节点(右):绿框加粗、字更大
     lines.append('{ rank=sink;')
     for q in sorted(used_q):
-        lines.append(f'"Q{q}" [label="Q{q} {SHORT_Q[q-1]}", shape=box, '
-                     f'style="filled", fillcolor="#F6FCF8", color="#2E9E5B"];')
+        lines.append(f'"Q{q}" [label="Q{q}\\n{SHORT_Q[q-1]}", style="filled,rounded", '
+                     f'fillcolor="#F6FCF8", color="#2E9E5B", fontsize=16, penwidth=1.6];')
     lines.append("}")
     lines += edges
     lines.append("}")

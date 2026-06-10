@@ -123,11 +123,18 @@ def page_hia_screen():
     # ===== ③ 因果路径图(随采纳/剪枝实时重绘)=====
     st.markdown("##### ③ 因果路径图(政策行动 → 健康决定因素 → 健康结果)")
     st.caption("左=政策行动,中=健康决定因素(多级、可间接),右=初筛表 10 题。"
-               "颜色:红/橙=风险(强/中),绿=效益,灰=推测;虚线=假设待证。下方可勾选采纳/剪枝。")
+               "颜色:红/橙=风险(强/中),绿=效益,灰=推测;虚线=假设待证。图较宽,可在框内左右/上下拖动查看;下方可勾选采纳/剪枝。")
+    # 让 graphviz 按自然尺寸渲染 + 框内滚动(否则 Streamlit 会把超宽图缩到容器宽 → 字太小、压扁)
+    st.markdown(
+        '<style>'
+        '[data-testid="stGraphVizChart"]{overflow:auto !important; max-height:600px;'
+        'border:1px solid #DCEEE3; border-radius:8px; background:#fff;}'
+        '[data-testid="stGraphVizChart"] svg{width:auto !important; height:auto !important;'
+        'max-width:none !important;}'
+        '</style>', unsafe_allow_html=True)
     adopted = _adopted()
     if adopted:
-        # 不用 use_container_width:它会把超宽因果图的 SVG 宽高抹成 0 → 整图不显示。
-        # 不传则保留自然尺寸(横向可滚动),图能正常渲染。
+        # 不用 use_container_width:它会把超宽图的 SVG 宽高抹成 0 → 整图不显示。
         st.graphviz_chart(hs.build_dot(res["actions"], adopted))
     else:
         st.caption("(当前没有已采纳的路径,勾选下方路径后此处显示图。)")
