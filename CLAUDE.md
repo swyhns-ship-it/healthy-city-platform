@@ -16,10 +16,14 @@ streamlit run app.py
 本机(家里)是 Anaconda 建的 venv + run.ps1(处理 OpenSSL DLL);**别的机器用干净的 Python 3.11 + venv 即可,无需那套 DLL 折腾**。
 
 ## 密钥 / 运行时配置(**不随 git 同步,每台机器/云端各配一次**)
-- **百度地图 AK**:凉爽路径规划的「全市·百度路线」模式 + 地址搜索 需要。写入 `.streamlit/secrets.toml`:
-  ```toml
-  baidu_ak = "你的AK"
-  ```
+`.streamlit/secrets.toml`(已 gitignore;云端在 Streamlit Cloud → Settings → Secrets 填同样内容):
+```toml
+baidu_ak = "你的AK"            # 百度路线/地址搜索
+deepseek_api_key = "sk-..."    # 智能助手 + AI辅助HIA
+app_password = "..."           # 平台访问口令门(auth.py;未配则不拦)
+admin_password = "..."         # 模块管理面板口令(?admin 进入;未配则本地放行——云端务必配)
+```
+- **百度地图 AK**:凉爽路径规划的「全市·百度路线」模式 + 地址搜索 需要。
   该文件已被 .gitignore(**换机器不会同步,要重配**);云端在 Streamlit Cloud → App → Settings → Secrets 填同样内容。
   AK 须**放开服务端调用**(IP 白名单设 `0.0.0.0/0` 或用 SN 签名),否则云端/服务端调不通。也可在页面密码框临时输入(仅当次会话)。
   「中心城区·绿荫路网」模式 + 地图点选 **不需要 AK**。
@@ -65,6 +69,8 @@ MCLP 选址原始数据(cool/residence1/jiedao shp,UTM 51N):来自 `MCLP.zip`,�
 - **开工前**:`git pull`
 - **收工前**:`git add -A && git commit -m "..." && git push`
 - 切忌两边都留未提交的改动 → 冲突。
+- **⚠️ 一次性(2026-06 重写过历史)**:为病例坐标脱敏 force-push 过一次,改写了历史。**另一台机器若还是改写前的旧历史,不要 pull,直接删掉项目文件夹重新 `git clone`**(否则 divergent 冲突);clone 一次后即恢复正常 pull/push。
+- **新机器/重新 clone 后**:① `pip install -r requirements.txt`(含 `pypdf`,AI 辅助 HIA 解析 PDF 用);② 重配 `.streamlit/secrets.toml`(见下)。
 - **国内 push 大文件被重置(OpenSSL errno 10053)** → 仓库本地配:`git config http.postBuffer 1048576000; git config http.version HTTP/1.1; git config http.lowSpeedLimit 0; git config http.lowSpeedTime 999999`,再多试几次 / 挂代理(`git config --global http.proxy http://127.0.0.1:端口`)。这些是本地 `.git/config`,**不随仓库同步,每台机器要各设一次**。
 - 新机器首次 push 需配 git 身份:`git config user.name swyhns; git config user.email 64192494+swyhns@users.noreply.github.com`;凭据走 GCM(manager-core),首次会弹 GitHub 登录窗。
 
