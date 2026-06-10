@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NYC Crime-Light Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.5.2/mapbox-gl.js"></script>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.5.2/mapbox-gl.css" rel="stylesheet" />
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; }
+    #map { height: 100%; }
+
+    /* layer toggle menu */
+    .menu {
+      position: absolute;
+      background: white;
+      padding: 10px;
+      font-family: sans-serif;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      top: 10px;
+      left: 10px;
+      font-size: 14px;
+      /* no max-width so labels do not wrap */
+    }
+    label {
+      display: block;
+      margin: 4px 0;
+      cursor: pointer;
+      white-space: nowrap;   /* keep each label on one line */
+    }
+
+    /* grouped dropdown style */
+    .group {
+      margin-top: 6px;
+    }
+    .group-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-weight: bold;
+      margin-bottom: 2px;
+    }
+    .group-header label {
+      margin: 0;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .group-arrow {
+      margin-left: 6px;
+      font-size: 12px;
+      user-select: none;
+    }
+    .group-body {
+      margin-left: 12px;
+      margin-top: 4px;
+    }
+    .group-body.hidden {
+      display: none;
+    }
+
+    /* slider style */
+    .slider-container {
+      margin-top: 6px;
+      margin-bottom: 4px;
+      font-size: 12px;
+      white-space: normal;
+    }
+    .slider-container input[type="range"] {
+      width: 160px;
+    }
+
+    /* legend */
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      right: 10px;
+      background: white;
+      padding: 10px 12px;
+      border-radius: 8px;
+      font-family: sans-serif;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      line-height: 1.4;
+      font-size: 16px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      margin: 4px 0;
+      font-size: 14px;
+    }
+    .legend-color {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      margin-right: 8px;
+      border: 1px solid #ccc;
+    }
+
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <!-- layer toggle -->
+  <div class="menu">
+    <strong style="font-size:18px;">Layers</strong>
+    <hr>
+
+    <!-- Grid layers (default ON) -->
+    <div class="group" id="group-grid">
+      <div class="group-header">
+        <label>
+          <input type="checkbox" id="groupGrid" checked> Grid Level
+        </label>
+        <span class="group-arrow">▾</span>
+      </div>
+      <div class="group-body" id="groupGrid-body">
+        <label><input type="checkbox" id="gridTotal"> Total Number of Crime (All)</label>
+        <label><input type="checkbox" id="gridLighting"> Average Lighting (nw/cm<sup>2</sup>sr)</label>
+        <label><input type="checkbox" id="gridOverlay" checked> Overlay Analysis of Crime and Lighting</label>
+
+        <!-- Slider + Input for lighting percentile threshold -->
+        <div class="slider-container">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <b>Lighting no higher than</b>
+            <!-- Percentile display -->
+            <span id="overlayThresholdValue">100</span>
+            <span>% Percentile</span>
+
+            <!-- Real value display (will be filled when quantiles are set) -->
+            <span id="overlayRealValue" style="margin-left:4px; color:#555;"></span>
+
+            <!-- User input box -->
+            <input type="number"
+                   id="overlayThresholdInputBox"
+                   value="100"
+                   min="0"
+                   max="100"
+                   step="1"
+                   style="width:70px; padding:2px 4px; font-size:12px;">
+          </div>
+
+          <!-- Slider row with min/max labels -->
+          <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+            <span id="overlayMinLabel">0</span>
+
+            <input type="range" id="overlayThreshold"
+                   min="0" max="100" step="1" value="50"
+                   style="width:160px;">
+
+            <span id="overlayMaxLabel">100</span>
+          </div>
+        </div>
+
+        <!-- Slider + Input for crime percentile threshold -->
+        <div class="slider-container">
+          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+            <b>Crime no lower than</b>
+            <!-- Percentile display -->
+            <span id="crimeThresholdValue">0</span>
+            <span>% Percentile</span>
+
+            <!-- Real value display (will be filled when quantiles are set) -->
+            <span id="crimeRealValue" style="margin-left:4px; color:#555;"></span>
+
+            <!-- User input box -->
+            <input type="number"
+                   id="crimeThresholdInputBox"
+                   value="0"
+                   min="0"
+                   max="100"
+                   step="1"
+                   style="width:70px; padding:2px 4px; font-size:12px;">
+          </div>
+
+          <!-- Slider row with min/max labels -->
+          <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
+            <span id="crimeMinLabel">0</span>
+
+            <input type="range" id="crimeThreshold"
+                   min="0" max="100" step="1" value="80"
+                   style="width:160px;">
+
+            <span id="crimeMaxLabel">100</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <hr>
+
+    <!-- Other boundaries (default OFF) -->
+    <div class="group" id="group-other">
+      <div class="group-header">
+        <label>
+          <input type="checkbox" id="groupOther"> Boundaries & Sites for Reference
+        </label>
+        <span class="group-arrow">▾</span>
+      </div>
+      <div class="group-body" id="groupOther-body">
+        <label><input type="checkbox" id="BID"> Business Improvement Districts</label>
+        <label><input type="checkbox" id="CVS"> Cure Violence Sites</label>
+        <label><input type="checkbox" id="Landuse"> Land Use Parcels</label>
+        <label><input type="checkbox" id="Scaffolding"> Scaffolding Sites</label>
+        <label><input type="checkbox" id="NYCHA Developments"> NYCHA Developments</label>
+        <label><input type="checkbox" id="311 Complaints"> 311 Complaints</label>
+        <label><input type="checkbox" id="Crashes: Pedestrian Killed"> Crashes: Pedestrian Killed</label>
+        <label><input type="checkbox" id="Crashes: Cyclist Killed"> Crashes: Cyclist Killed </label>
+      </div>
+    </div>
+    <hr>
+
+
+    <!-- NTA layers (default ON) -->
+    <div class="group" id="group-nta">
+      <div class="group-header">
+        <label>
+          <input type="checkbox" id="groupNTA" checked> NTA Level
+        </label>
+        <span class="group-arrow">▾</span>
+      </div>
+      <div class="group-body" id="groupNTA-body">
+        <label><input type="checkbox" id="ntaBoundary" checked> NTABoundary </label>
+      </div>
+    </div>
+    <hr>
+
+    <!-- Police Precinct layers (default OFF) -->
+    <div class="group" id="group-police">
+      <div class="group-header">
+        <label>
+          <input type="checkbox" id="groupPolice"> Police Precinct Level
+        </label>
+        <span class="group-arrow">▾</span>
+      </div>
+      <div class="group-body" id="groupPolice-body">
+        <label><input type="checkbox" id="policeBoundary"> Police Precinct Boundary </label>
+      </div>
+    </div>
+    <hr>
+
+    <!-- Crime point layers (default OFF) -->
+    <div class="group" id="group-crime">
+      <div class="group-header">
+        <label>
+          <input type="checkbox" id="groupCrime"> Selected Crime Points
+        </label>
+        <span class="group-arrow">▾</span>
+      </div>
+      <div class="group-body" id="groupCrime-body">
+        <label><input type="checkbox" id="crimeC1"> Misdemeanor Assault</label>
+        <label><input type="checkbox" id="crimeC2"> Robbery</label>
+        <label><input type="checkbox" id="crimeC3"> Felony Assault</label>
+        <label><input type="checkbox" id="crimeC4"> Homicide</label>
+        <label><input type="checkbox" id="shooting"> Shooting</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- legend -->
+  <div id="legend" class="legend"></div>
+
+  <script>
+    // Mapbox setup
+    mapboxgl.accessToken = 'pk.eyJ1IjoieHIyMDA2IiwiYSI6ImNtaTdkdHpyMjA1eTEya3EwbjVkeHh0OHcifQ.63Tlvydk2jod3GrgjFyAKw';
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/xr2006/cmhwoanp7002m01rzcttqh1jw?fresh=true',
+      center: [-74.03, 40.70],
+      zoom: 10
+    });
+
+    // Grid polygon layer IDs (change these to match your style)
+    const gridTotalId    = 'Grid-All_Crime';
+    const gridLightingId = 'Grid-Avg_Lighting';
+    const gridOverlayId  = 'Grid-Overlap_Analysis';
+
+    // Polygon layer IDs
+    const ntaBoundaryId       = 'NTA--Boundary';
+    const policeBoundaryId    = 'Police Precinct--Boundary';
+
+
+    const BIDId      = 'Business Improvement Districts';
+    const CVSId      = 'Cure Violence Site';
+    const LanduseId  = 'Land Use';
+    const ScaffoldingId  = 'Scaffholding';
+    const NYCHAId = 'NYCHA Developments';
+    const ComplaintsId = '311_Complaints';
+    const PedestrianId = 'Pedestrian Killed';
+    const CyclistId = 'Cyclist Killed';
+
+
+    // Crime point layer IDs
+    const crimeC1Id = 'Crime Points--C1';
+    const crimeC2Id = 'Crime Points--C2';
+    const crimeC3Id = 'Crime Points--C3';
+    const crimeC4Id = 'Crime Points--C4';
+    const shootingId = 'Shooting Points';
+
+    // Hover priority (first visible in this list will be used for tooltip)
+    const hoverPriority = [
+      gridTotalId,
+      gridLightingId,
+      ntaBoundaryId,
+      policeBoundaryId,
+    ];
+
+    // ---- Quantile lookup table (0..100 percentiles -> real avg_lighting) ----
+    // Fill this with your real values later, e.g.:
+    const lightingQuantiles = [1.66, 3.28, 4.27, 5.79, 7.4, 8.49, 9.7, 10.96, 12.69, 14.15, 15.38, 16.69, 17.8, 18.76, 19.96, 21.24, 22.42, 23.49, 24.81, 25.97, 27.0, 27.64, 28.54, 29.34, 30.06, 30.71, 31.43, 32.24, 33.04, 33.64, 34.22, 35.07, 35.82, 36.51, 37.17, 37.97, 38.59, 39.19, 39.97, 40.67, 41.19, 41.88, 42.55, 43.35, 44.11, 44.84, 45.75, 46.34, 47.14, 48.01, 48.84, 49.79, 50.47, 51.45, 52.29, 53.56, 54.68, 55.71, 56.9, 58.1, 59.46, 60.44, 61.42, 62.66, 63.86, 65.0, 66.23, 67.6, 69.14, 70.42, 71.61, 73.23, 74.61, 76.16, 77.42, 78.65, 80.36, 82.04, 83.94, 86.0, 87.81, 89.74, 91.91, 94.05, 97.23, 100.28, 102.84, 105.63, 108.85, 111.4, 114.92, 118.83, 122.41, 127.3, 133.63, 143.44, 155.7, 173.73, 207.31, 283.61, 931.25];  // placeholder
+
+    // ---- Quantile lookup table (0..100 percentiles -> real total_crime) ----
+    // Fill this with your real values later, e.g.:
+    const crimeQuantiles = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 5.0, 5.0, 5.0, 6.0, 6.0, 6.0, 7.0, 7.0, 8.0, 8.0, 9.0, 9.0, 10.0, 10.0, 11.0, 11.0, 12.0, 13.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 20.0, 21.0, 23.0, 24.0, 27.0, 29.0, 31.0, 34.0, 37.0, 40.0, 44.0, 47.0, 53.0, 59.0, 65.68, 76.0, 91.84, 114.0, 530.0]
+
+    function percentileToReal(pct) {
+      const i = Math.round(Math.max(0, Math.min(100, pct)));
+      if (lightingQuantiles.length === 101) {
+        return lightingQuantiles[i];
+      }
+      // Fallback: return null if quantiles not set
+      return null;
+    }
+
+    function crimePercentileToReal(pct) {
+      const i = Math.round(Math.max(0, Math.min(100, pct)));
+      if (crimeQuantiles.length === 101) {
+        return crimeQuantiles[i];
+      }
+      // Fallback: return null if quantiles not set
+      return null;
+    }
+
+    map.on('load', () => {
+
+      /* ---------- Dropdown open/close behavior ---------- */
+      function setupGroupDropdown(groupId, bodyId) {
+        const group  = document.getElementById(groupId);
+        const header = group.querySelector('.group-header');
+        const body   = document.getElementById(bodyId);
+        const arrow  = group.querySelector('.group-arrow');
+
+        header.addEventListener('click', (e) => {
+          // Ignore clicks on the checkbox itself
+          if (e.target.tagName.toLowerCase() === 'input') return;
+          body.classList.toggle('hidden');
+          arrow.textContent = body.classList.contains('hidden') ? '▸' : '▾';
+        });
+      }
+
+      setupGroupDropdown('group-grid',      'groupGrid-body');
+      setupGroupDropdown('group-nta',       'groupNTA-body');
+      setupGroupDropdown('group-police',    'groupPolice-body');
+      setupGroupDropdown('group-other',     'groupOther-body');
+      setupGroupDropdown('group-crime',     'groupCrime-body');
+
+      /* ---------- Helpers for visibility and group sync ---------- */
+
+      function setLayerVisibility(layerId, visible) {
+        if (map.getLayer(layerId)) {
+          map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+        }
+      }
+
+      function syncGroupCheckbox(groupCheckboxId, childCheckboxIds) {
+        const anyChecked = childCheckboxIds.some(id => {
+          const el = document.getElementById(id);
+          return el && el.checked;
+        });
+        const groupCheckbox = document.getElementById(groupCheckboxId);
+        groupCheckbox.checked = anyChecked;
+      }
+
+      function setupGroupControls(groupCheckboxId, childConfig) {
+        const groupCheckbox = document.getElementById(groupCheckboxId);
+
+        // Group-level checkbox: toggle all children and their layers
+        groupCheckbox.addEventListener('change', (e) => {
+          const checked = e.target.checked;
+          childConfig.forEach(cfg => {
+            const child = document.getElementById(cfg.checkboxId);
+            child.checked = checked;
+            setLayerVisibility(cfg.layerId, checked);
+          });
+          updateLegend();
+        });
+
+        // Child-level checkbox: toggle single layer and then sync group state
+        childConfig.forEach(cfg => {
+          const child = document.getElementById(cfg.checkboxId);
+          child.addEventListener('change', (e) => {
+            setLayerVisibility(cfg.layerId, e.target.checked);
+            syncGroupCheckbox(groupCheckboxId, childConfig.map(c => c.checkboxId));
+            updateLegend();
+          });
+        });
+      }
+
+      /* ---------- Set up each group ---------- */
+
+      // Grid layers
+      setupGroupControls('groupGrid', [
+        { checkboxId: 'gridTotal',   layerId: gridTotalId },
+        { checkboxId: 'gridLighting', layerId: gridLightingId },
+        { checkboxId: 'gridOverlay',  layerId: gridOverlayId },
+      ]);
+
+      // NTA layers
+      setupGroupControls('groupNTA', [
+        { checkboxId: 'ntaBoundary', layerId: ntaBoundaryId }
+      ]);
+
+      // Police Precinct layers
+      setupGroupControls('groupPolice', [
+        { checkboxId: 'policeBoundary', layerId: policeBoundaryId },
+      ]);
+
+      // Other layers
+      setupGroupControls('groupOther', [
+        { checkboxId: 'BID',     layerId: BIDId },
+        { checkboxId: 'CVS',     layerId: CVSId },
+        { checkboxId: 'Landuse', layerId: LanduseId },
+        { checkboxId: 'Scaffolding', layerId: ScaffoldingId },
+        { checkboxId: 'NYCHA Developments', layerId: NYCHAId },
+        { checkboxId: '311 Complaints', layerId: ComplaintsId },
+        { checkboxId: 'Crashes: Pedestrian Killed', layerId: PedestrianId },
+        { checkboxId: 'Crashes: Cyclist Killed', layerId: CyclistId },
+      ]);
+
+      // Crime point layers
+      setupGroupControls('groupCrime', [
+        { checkboxId: 'crimeC1', layerId: crimeC1Id },
+        { checkboxId: 'crimeC2', layerId: crimeC2Id },
+        { checkboxId: 'crimeC3', layerId: crimeC3Id },
+        { checkboxId: 'crimeC4', layerId: crimeC4Id },
+        { checkboxId: 'shooting', layerId: shootingId },
+      ]);
+
+      /* ---------- Slider + input + filter for Overlay layer ---------- */
+
+      const overlaySlider = document.getElementById('overlayThreshold');
+      const overlayValueSpan = document.getElementById('overlayThresholdValue');
+      const overlayInputBox = document.getElementById('overlayThresholdInputBox');
+      const overlayMinLabel = document.getElementById('overlayMinLabel');
+      const overlayMaxLabel = document.getElementById('overlayMaxLabel');
+      const overlayRealSpan = document.getElementById('overlayRealValue');
+
+      const crimeSlider = document.getElementById('crimeThreshold');
+      const crimeValueSpan = document.getElementById('crimeThresholdValue');
+      const crimeInputBox = document.getElementById('crimeThresholdInputBox');
+      const crimeMinLabel = document.getElementById('crimeMinLabel');
+      const crimeMaxLabel = document.getElementById('crimeMaxLabel');
+      const crimeRealSpan = document.getElementById('crimeRealValue');
+
+      // Set min/max labels (optional if static)
+      overlayMinLabel.textContent = overlaySlider.min;
+      overlayMaxLabel.textContent = overlaySlider.max;
+      crimeMinLabel.textContent = crimeSlider.min;
+      crimeMaxLabel.textContent = crimeSlider.max;
+
+      // Apply combined filter based on both lighting and crime thresholds
+      function applyOverlayFilter() {
+        const lightingThreshold = Number(overlaySlider.value);
+        const crimeThreshold = Number(crimeSlider.value);
+
+        // Update lighting UI
+        overlayValueSpan.textContent = lightingThreshold.toFixed(0);
+        overlayInputBox.value = lightingThreshold;
+        const lightingRealVal = percentileToReal(lightingThreshold);
+        if (lightingRealVal !== null) {
+          overlayRealSpan.innerHTML =
+            ` (&#8804; ${lightingRealVal.toFixed(1)} nw/cm<sup>2</sup>sr)`;
+        } else {
+          overlayRealSpan.innerHTML = '';
+        }
+
+        // Update crime UI
+        crimeValueSpan.textContent = crimeThreshold.toFixed(0);
+        crimeInputBox.value = crimeThreshold;
+        const crimeRealVal = crimePercentileToReal(crimeThreshold);
+        if (crimeRealVal !== null) {
+          crimeRealSpan.innerHTML =
+            ` (&#8805; ${crimeRealVal} crimes)`;
+        } else {
+          crimeRealSpan.innerHTML = '';
+        }
+
+        // Apply combined filter to the overlay layer
+        if (map.getLayer(gridOverlayId)) {
+          map.setFilter(gridOverlayId, [
+            'all',
+            ['<=', ['get', 'avg_lighting_percentile'], lightingThreshold],
+            ['>=', ['get', 'all_crime_percentile'], crimeThreshold]
+          ]);
+        }
+      }
+
+      function applyLightingFilterFromValue(threshold) {
+        const minVal = Number(overlaySlider.min);
+        const maxVal = Number(overlaySlider.max);
+        const t = Math.max(minVal, Math.min(maxVal, Number(threshold)));
+        overlaySlider.value = t;
+        applyOverlayFilter();
+      }
+
+      function applyCrimeFilterFromValue(threshold) {
+        const minVal = Number(crimeSlider.min);
+        const maxVal = Number(crimeSlider.max);
+        const t = Math.max(minVal, Math.min(maxVal, Number(threshold)));
+        crimeSlider.value = t;
+        applyOverlayFilter();
+      }
+
+      // Lighting slider → input + filter
+      overlaySlider.addEventListener('input', () => {
+        applyLightingFilterFromValue(overlaySlider.value);
+      });
+
+      // Lighting input box → slider + filter
+      overlayInputBox.addEventListener('change', () => {
+        applyLightingFilterFromValue(overlayInputBox.value);
+      });
+
+      // Crime slider → input + filter
+      crimeSlider.addEventListener('input', () => {
+        applyCrimeFilterFromValue(crimeSlider.value);
+      });
+
+      // Crime input box → slider + filter
+      crimeInputBox.addEventListener('change', () => {
+        applyCrimeFilterFromValue(crimeInputBox.value);
+      });
+
+      // Initialize both filters
+      applyOverlayFilter();
+
+      /* ---------- Initial visibility ---------- */
+
+      // Initial visible layers
+      setLayerVisibility(gridOverlayId, true);
+      setLayerVisibility(ntaBoundaryId, true);
+
+      // All other polygon layers hidden
+      [
+        gridLightingId, gridTotalId,
+        policeBoundaryId,
+        BIDId, CVSId,
+        LanduseId, ScaffoldingId, NYCHAId, ComplaintsId, PedestrianId, CyclistId,
+      ].forEach(id => setLayerVisibility(id, false));
+
+      // All crime point layers hidden
+      [crimeC1Id, crimeC2Id, crimeC3Id, crimeC4Id, shootingId]
+        .forEach(id => setLayerVisibility(id, false));
+
+      /* ---------- Hover tooltip (first visible layer by priority) ---------- */
+
+      const hoverPopup = new mapboxgl.Popup({
+        closeButton: false,
+        closeOnClick: false
+      });
+
+      function isLayerVisible(id) {
+        return map.getLayer(id) &&
+               map.getLayoutProperty(id, 'visibility') !== 'none';
+      }
+
+      function getTopHoverLayer() {
+        for (const id of hoverPriority) {
+          if (isLayerVisible(id)) return id;
+        }
+        return null;
+      }
+
+      // Build tooltip HTML depending on which layer we are hovering
+      function getTooltipHTML(layerId, f) {
+        const p = f.properties || {};
+
+        // Grid: General
+        if (layerId === gridTotalId || layerId === gridLightingId || layerId === gridOverlayId) {
+          const avg = p["avg_lighting"];
+          const avgStr = (avg !== null && avg !== undefined && avg !== '')
+            ? Number(avg).toFixed(1)          // keep 1 decimal place
+            : 'N/A';
+          const is_high_crime = p["is_high_cr"];
+          const isHighCrimeStr = (is_high_crime == 1) ? "Yes" : "No";
+          const isLowLightStr = (avg <= 48.83) ? "Yes" : "No";
+
+          return `
+            <div style="font-size: 14px; font-family: sans-serif; padding: 0;">
+              <div><b>Grid ID:</b> ${p["Shape_ID"] ?? 'N/A'}</div>
+              <div><b>Total Number of Crime:</b> ${p["total_crime"] ?? 'N/A'}</div>
+              <div><b>Average Lighting:</b> ${avgStr} nw/cm<sup>2</sup>sr</div>
+              <div><b>Moran's I category:</b> ${p["LISA_type"] ?? 'N/A'}</div>
+            </div>`;
+        }
+
+        // Default template for NTA / Police 
+        return `
+          <div style="font-size: 14px; font-family: sans-serif; padding: 0;">
+            <div><b>Name:</b> ${p.Name ?? 'N/A'}</div>
+          </div>`;
+      }
+
+      // Attach hover events to all candidate layers
+      hoverPriority.forEach((layerId) => {
+        map.on('mouseenter', layerId, () => {
+          const active = getTopHoverLayer();
+          if (active === layerId) {
+            map.getCanvas().style.cursor = 'pointer';
+          }
+        });
+
+        map.on('mouseleave', layerId, () => {
+          map.getCanvas().style.cursor = '';
+          hoverPopup.remove();
+        });
+
+        map.on('mousemove', layerId, (e) => {
+          const active = getTopHoverLayer();
+          if (active !== layerId) return;  // only show popup for top-priority visible layer
+
+          const f = e.features && e.features[0];
+          if (!f) return;
+
+          const html = getTooltipHTML(layerId, f);
+          hoverPopup.setLngLat(e.lngLat).setHTML(html).addTo(map);
+        });
+      });
+
+      /* ---------- Legend ---------- */
+
+      function anyVisible(layerIds) {
+        return layerIds.some(id =>
+          map.getLayer(id) &&
+          map.getLayoutProperty(id, 'visibility') !== 'none'
+        );
+      }
+
+      function updateLegend() {
+        const legend = document.getElementById('legend');
+
+        const gridCrimeVisible = anyVisible([gridTotalId]);
+        const gridLightingVisible = anyVisible([gridLightingId]);
+        const gridOverlayVisible = anyVisible([gridOverlayId]);
+        
+        const ntaVisible = anyVisible([ntaBoundaryId]);
+        const policeVisible = anyVisible([policeBoundaryId]);
+
+        const c1Visible = anyVisible([crimeC1Id]);
+        const c2Visible = anyVisible([crimeC2Id]);
+        const c3Visible = anyVisible([crimeC3Id]);
+        const c4Visible = anyVisible([crimeC4Id]);
+        const shootingVisible = anyVisible([shootingId]);
+        const BIDVisible = anyVisible([BIDId]);
+        const CVSVisible = anyVisible([CVSId]);
+        const LanduseVisible = anyVisible([LanduseId]);
+        const ScaffoldingVisible = anyVisible([ScaffoldingId]);
+        const NYCHAVisible = anyVisible([NYCHAId]);
+        const ComplaintsVisible = anyVisible([ComplaintsId]);
+        const PedestrianVisible = anyVisible([PedestrianId]);
+        const CyclistVisible = anyVisible([CyclistId]);
+
+        let html = '<strong style="font-size:18px;">Legend</strong>';
+
+        if (gridCrimeVisible) {
+          html += `
+            <hr>
+            <div><b>Total Number of Crime</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:#fee5d9;"></span> Very Low Crime </div>
+            <div class="legend-item"><span class="legend-color" style="background:#fcae91;"></span> Low Crime </div>
+            <div class="legend-item"><span class="legend-color" style="background:#fb6a4a;"></span> Moderate Crime </div>
+            <div class="legend-item"><span class="legend-color" style="background:#de2d26;"></span> High Crime </div>
+            <div class="legend-item"><span class="legend-color" style="background:#a50f15;"></span> Very High Crime </div>
+          `;
+        }
+
+        if (gridLightingVisible) {
+          html += `
+            <hr>
+            <div><b>Average Lighting</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:#252525;"></span> Very Low Lighting</div>
+            <div class="legend-item"><span class="legend-color" style="background:#636363;"></span> Low Lighting</div>
+            <div class="legend-item"><span class="legend-color" style="background:#969696;"></span> Moderate Lighting </div>
+            <div class="legend-item"><span class="legend-color" style="background:#cccccc;"></span> High Lighting </div>
+            <div class="legend-item"><span class="legend-color" style="background:#f7f7f7;"></span> Very High Lighting </div>
+          `;
+        }
+
+        if (gridOverlayVisible) {
+          html += `
+            <hr>
+            <div><b>Overlay Analysis</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:#f50000;display:inline-block;border-radius:50%;"></span> High Crime Low Lighting (HCLL) Grid </div>
+          `;
+        }
+
+        if (ntaVisible) {
+          html += `
+            <hr>
+            <div><b>NTA Level</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:transparent;border: 1px solid #000000;"></span> NTA Boundary </div>
+          `;
+        }
+
+        if (policeVisible) {
+          html += `
+            <hr>
+            <div><b>Police Precinct Level</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:transparent;border: 1px solid #000000;"></span> Police Precinct Boundary </div>
+          `;
+        }
+
+        if (c1Visible || c2Visible || c3Visible || c4Visible || shootingVisible) {
+          html += `
+            <hr>
+            <div><b>Crime Points</b></div>
+          `;
+        }
+        if (c1Visible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#e41a1c;display:inline-block;border-radius:50%;"></span> Misdemeanor Assault </div>
+          `;
+        }
+        if (c2Visible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#377eb8;display:inline-block;border-radius:50%;"></span> Robbery </div>
+          `;
+        }
+        if (c3Visible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#4daf4a;display:inline-block;border-radius:50%;"></span> Felony Assault </div>
+          `;
+        }
+        if (c4Visible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#984ea3;display:inline-block;border-radius:50%;"></span> Homicide </div>
+          `;
+        }
+        if (shootingVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#fbe55b;display:inline-block;border-radius:50%;"></span> Shooting </div>
+          `;
+        }
+
+        if (BIDVisible || CVSVisible || LanduseVisible || ScaffoldingVisible || NYCHAVisible || ComplaintsVisible || PedestrianId || CyclistId) {
+          html += `
+            <hr>
+            <div><b>Other Boundries</b></div>
+          `;
+        }
+        if (BIDVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#753901;"></span> Business Improvement Districts </div>
+          `;
+        }
+        if (CVSVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#2942ff;"></span> Cure Violence Site </div>
+          `;
+        }
+        if (LanduseVisible) {
+          html += `
+            <hr>
+            <div><b>Zoning</b></div>
+            <div class="legend-item"><span class="legend-color" style="background:#D97477;"></span> Commercial Districts</div>
+            <div class="legend-item"><span class="legend-color" style="background:#D39FE7;"></span> Manufacturing Districts </div>
+            <div class="legend-item"><span class="legend-color" style="background:#F7ED91;"></span> Residence Districts </div>
+            <div class="legend-item"><span class="legend-color" style="background:#B6DEAD;"></span> Parks </div>
+            <div class="legend-item"><span class="legend-color" style="background:#AFAFAF;"></span> Battery Park City </div>
+          `;
+        }
+        if (ScaffoldingVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#ff24d3;display:inline-block;border-radius:50%;"></span> Scaffolding Site </div>
+          `;
+        }
+        if (NYCHAVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#fd4e4e;"></span> NYCHA Developments </div>
+          `;
+        }
+        if (ComplaintsVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#fcfdfc;display:inline-block;border-radius:50%;"></span> 311 Complaints </div>
+          `;
+        }
+        if (PedestrianVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#1a98ff;display:inline-block;border-radius:50%;"></span> Crashes: Pedestrian Killed </div>
+          `;
+        }
+        if (CyclistVisible) {
+          html += `
+            <div class="legend-item"><span class="legend-color" style="background:#0fff0f;display:inline-block;border-radius:50%;"></span> Crashes: Cyclist Killed </div>
+          `;
+        }
+        legend.innerHTML = html;
+      }
+
+      // Initial legend (after we set initial visibility)
+      updateLegend();
+    });
+  </script>
+</body>
+</html>
