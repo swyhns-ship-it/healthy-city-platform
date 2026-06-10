@@ -31,6 +31,9 @@ from views.friends import page_friends
 inject_css()
 render_banner()
 
+from auth import require_login
+require_login()   # 未通过口令则在此 st.stop();本地无 app_password secret 时不拦
+
 pages = {
     "平台首页": [st.Page(page_home, title="首页", icon="🏠", default=True)],
     "智能助手": [st.Page(page_assistant, title="智能助手(对话引导)", icon="🤖")],

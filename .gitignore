@@ -19,6 +19,9 @@ feature_grids.npz
 .streamlit/secrets.toml
 /tmp/
 
+# 病例精确坐标原始备份(脱敏前真源,只留本机;提交的是脱敏版 heatcase_points.npz)
+heatcase_points_precise.local.npz
+
 # 说明:以下运行时数据文件【需要】提交,勿忽略:
 #   model_v2.joblib, baseline_v2.npz, feature_grids_dense.npz,
 #   heat_risk_grid.npz, heat_risk_model.json, heat_cases.npz,
