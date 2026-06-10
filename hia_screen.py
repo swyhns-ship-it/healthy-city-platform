@@ -20,6 +20,8 @@ from io import BytesIO
 
 import requests
 
+import hia_evidence
+
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-chat"
 MAX_DOC_CHARS = 40000
@@ -311,6 +313,7 @@ def analyze(doc_text, key, project_name="", progress=None):
     _p("③ 完整性批判与补全…")
     added, summary, level, notes = critique_augment(actions, paths, key)
     paths += _norm_pathways(added, aids, start=len(paths) + 1)
+    hia_evidence.annotate(paths)            # 挂 WHO/meta 级证据卡片(机制端来源)
 
     items = compute_items(paths)
     if level not in ("很小", "轻度", "重大"):
@@ -459,8 +462,15 @@ def build_screen_docx(header, items, pathways, level, expert_opinion):
             line = (f"   · [{p['strength']}/{p['status']}] " + " → ".join(p["chain"])
                     + (f"|人群:{p['population']}" if p["population"] else ""))
             para(line, size=9.5, color=GREY, after=1)
-            if p.get("evidence"):
-                para(f"     依据:{p['evidence']}", size=9, color=GREY, after=2)
+            if p.get("status") == "文档支持" and p.get("evidence"):
+                para(f"     文档依据:{p['evidence']}", size=9, color=GREY, after=1)
+            cards = p.get("cards") or []
+            if cards:
+                src = ";".join(f"{c['link']}(来源:{'、'.join(c['sources'])};证据{c['strength']})"
+                               for c in cards)
+                para(f"     机制来源:{src}", size=9, color=GREY, after=2)
+            else:
+                para("     机制来源:机制推断 · 待专家补证", size=9, color=GREY, after=2)
         if it.get("note"):
             para(f"   专家备注:{it['note']}", size=9.5, after=3)
 

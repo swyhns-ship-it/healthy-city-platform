@@ -11,6 +11,7 @@ from datetime import date
 import streamlit as st
 
 import hia_screen as hs
+import hia_evidence
 from theme import page_header
 
 ANSWERS = hs.ANSWERS
@@ -146,13 +147,17 @@ def page_hia_screen():
                         f"{p.get('lens','')}</span>")
                 st.markdown(meta, unsafe_allow_html=True)
                 st.checkbox(chain, value=_adopt_default(p), key=f"hs_adopt_{p['id']}")
-                detail = []
                 if p.get("population"):
-                    detail.append("人群:" + p["population"])
-                if p.get("evidence"):
-                    detail.append("依据:" + p["evidence"])
-                if detail:
-                    st.caption("　" + "　|　".join(detail))
+                    st.caption("　人群:" + p["population"])
+                if p.get("status") == "文档支持" and p.get("evidence"):
+                    st.caption("　📄 文档依据:" + p["evidence"])
+                cards = p.get("cards") or []
+                if cards:
+                    for c in cards:
+                        st.caption(f"　📚 来源:{c['link']} — {'、'.join(c['sources'])}"
+                                   f"(证据强度:{c['strength']})")
+                else:
+                    st.caption("　📚 机制来源:机制推断 · 待专家补证(可在 hia_evidence 增补 WHO/meta 卡片)")
 
     # —— 专家补充自定义路径 ——
     with st.expander("➕ 补充自定义路径(专家手动添加)"):
@@ -172,11 +177,13 @@ def page_hia_screen():
             if steps:
                 st.session_state.setdefault("hs_custom", [])
                 cid = f"C{len(st.session_state['hs_custom'])+1}"
-                st.session_state["hs_custom"].append({
+                newp = {
                     "id": cid, "action_id": c_act, "chain": steps, "outcome_q": int(c_q),
                     "direction": c_dir, "population": "", "lens": "专家补充",
                     "strength": c_str, "status": "专家补充", "evidence": "(专家补充)",
-                    "confidence": 0.8})
+                    "confidence": 0.8}
+                hia_evidence.annotate([newp])      # 自动匹配 WHO/meta 证据卡片
+                st.session_state["hs_custom"].append(newp)
                 st.session_state[f"hs_adopt_{cid}"] = True
                 st.rerun()
             else:
