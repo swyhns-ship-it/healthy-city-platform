@@ -171,6 +171,9 @@ def page_heatcase_map():
                               f"{'(仅精确定位)' if precise_only else ''},超 2500 抽样。",
                   "街道重症比例": "按**现住地**街道聚合(用全部病例);填色=重症比例(<3 例置灰)或病例数。悬停看明细。"}
         st.caption(legend[layer])
+        if layer in ("病例热力图", "病例点分布"):
+            st.caption("🔒 隐私保护:点位坐标已随机偏移(约 300 米内),**仅为示意、非真实居住位置**;"
+                       "街道聚合统计不受影响。")
     with colstat:
         st.markdown("**年度病例趋势**")
         yc = pd.Series(f["year"]).value_counts().sort_index()
