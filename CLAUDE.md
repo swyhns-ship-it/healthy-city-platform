@@ -31,9 +31,10 @@ admin_password = "..."         # 模块管理面板口令(?admin 进入;未配�
 ## 架构(分层:入口 / 共享层 / 页面 / 引擎,st.navigation 多页,按研究维度分组)
 **代码分层**(2026-06 由 1546 行的单体 app.py 拆分):
 - `app.py`(~40 行):瘦身入口 —— set_page_config + 注入主题 + banner + st.navigation 注册页面。
-- `theme.py`:健康绿主题色常量、全局 CSS(inject_css)、品牌条(render_banner)、统一页头(page_header)。
+- `theme.py`:健康绿主题色常量、全局 CSS(inject_css)、品牌条(render_banner)、统一页头(page_header)、`md_bold()`(HTML 文本里 **→<b>)。
+- `auth.py`:访问口令门(require_login)+ 会话级限流(rate_limit)。`module_config.py`:板块可见性/数据打码配置(读写 module_config.json,被 app.py 导航过滤与 admin 面板用)。
 - `geo.py`:坐标变换(WGS84↔GCJ-02)+ folium 地图/栅格渲染工具(_add_basemap、dlst/risk 栅格、build_draw_map、面积/范围校验),纯绘图工具、无页面逻辑。
-- `views/`:按维度一页(组)一模块 —— static_pages(首页/行为/关于)、health_risk、heatcase_map、health_resource、cooling、hia、methodology。页面只做 UI,调用 engines + geo + theme。
+- `views/`:按维度一页(组)一模块 —— static_pages(首页/行为/关于)、assistant、health_risk、heatcase_map、heatroute、health_resource、ems_response、cooling、bike、hia、hia_calc、hia_screen、methodology、friends、admin。页面只做 UI,调用 engines + geo + theme。
 - 拆分原则:engines 与数据文件保持根目录不动(避免改路径/踩部署坑)。改动详见 git。
 
 页面(在 views/ 下):
@@ -41,14 +42,14 @@ admin_password = "..."         # 模块管理面板口令(?admin 进入;未配�
 - **健康风险** → page_health_risk:热相关重症风险诊断;_heat_diag() 局部建成环境(绿地/建筑密度/容积率)→ΔLST→重症化概率,同图对比。page_heatcase_map:中暑病例风险地图(2013–2025 上海 5349 例实测,热力图/病例点/街道重症比例 choropleth + 多维筛选,引擎 heatcase.py)。page_heatroute:凉爽路径规划(**统一一页两模式**,共享起终点[地图点选/地址搜索]):①全市·百度路线(directionlite + 凉爽途经点绕行 → 沿路 100m LST 热暴露,引擎 heatroute.py,需百度 AK);②中心城区·绿荫路网(街景路网多目标最短路:距离+LST+绿视率 S_veget 加权,scipy Dijkstra,引擎 roadnet.py,仅路网范围内)
 - **健康资源** → page_health_resource:_heat_ems() 急救站布局模拟(客户端 Leaflet 组件,实时落站/拖站);page_cooling_layout:纳凉设施布局优化(MCLP 最大覆盖选址 + 街道公平性软约束,pulp/CBC 现场求解)
 - **健康行为** → page_behavior:占位(待数据)
-- **健康影响评估** → page_hia_cases(绿地干预示范案例)/ render_custom_mode(自定义地块 HIA)
-- **方法与关于** → render_methodology / page_about
+- **健康影响评估** → render_custom_mode(自定义地块绿地 HIA)/ page_hia_calc(规划方案 HIA 计算器,专利 5D 法)/ **page_hia_screen(AI 辅助 HIA 定性初筛,见本会话新增)**
+- **智能助手** → page_assistant(DeepSeek 对话引导+预填跳转);**友情链接** → page_friends;**关于** → page_about(标签页:平台说明/延伸阅读);**模块管理** → views/admin.page_admin(?admin 进入)
 
-计算引擎(根目录,纯函数,被 views 调用):`green_lst.py`(LST 随机森林 + 干预 ΔLST,含邻域外溢)、`heat_risk.py`(中暑重症 logistic + ΔLST→Δ风险链路)、`hia_engine.py`(逐格 HIA)、`cooling_mclp.py`(纳凉设施 MCLP 选址优化,scipy+pulp,**不依赖 geopandas**)、`heatcase.py`(中暑病例风险地图:加载/筛选/街道聚合,轻量)、`heatroute.py`(凉爽路径规划:百度 directionlite 路线 + geocoding 地址解析 + LST 的 cKDTree 采样 + 沿路热暴露 + 凉爽途经点绕行强造备选,LST 面取自 green_lst,无新数据文件)、`roadnet.py`(绿荫凉爽路径:街景路网图 + scipy Dijkstra 多目标最短路,边权=长度×(1+w_热·LST归一+w_荫·(1−S_veget)))、`cases.py`、`report_docx.py`。
+计算引擎(根目录,纯函数,被 views 调用):`green_lst.py`(LST 随机森林 + 干预 ΔLST,含邻域外溢)、`heat_risk.py`(中暑重症 logistic + ΔLST→Δ风险链路)、`hia_engine.py`(逐格 HIA)、`cooling_mclp.py`(纳凉设施 MCLP 选址优化,scipy+pulp,**不依赖 geopandas**)、`heatcase.py`(中暑病例风险地图:加载/筛选/街道聚合,轻量)、`heatroute.py`(凉爽路径规划:百度 directionlite 路线 + geocoding 地址解析 + LST 的 cKDTree 采样 + 沿路热暴露 + 凉爽途经点绕行强造备选,LST 面取自 green_lst,无新数据文件)、`roadnet.py`(绿荫凉爽路径:街景路网图 + scipy Dijkstra 多目标最短路,边权=长度×(1+w_热·LST归一+w_荫·(1−S_veget)))、`hia_screen.py`(AI 辅助 HIA 因果路径流水线 + docx,见本会话新增)、`hia_evidence.py`(WHO 证据卡片库)、`hia_calc.py`(规划方案 HIA 专利法)、`bike_ride.py`、`ems_response.py`、`cases.py`、`report_docx.py`。
 新增分析的范式:加一个引擎(根目录)+ 在 `views/` 加一页 + 在 app.py 的 st.navigation 注册。MCLP 是最新一例:离线 `analysis/build_cooling_data.py`(pyshp+shapely+pyproj 读 shp)瘦身成 npz/geojson,运行时只用 numpy/scipy/pulp 现场求解。
 
 ## 运行时数据文件(在仓库内,勿删)
-model_v2.joblib(29MB,LST RF,已 compress)、baseline_v2.npz、feature_grids_dense.npz(21MB)、heat_risk_grid.npz、heat_risk_model.json、heat_cases.npz、heat_ems_points.npz、heat_facility_grids.npz、cooling_mclp.npz(0.49MB,纳凉/小区/街道坐标+属性)、cooling_jiedao.geojson(0.65MB,简化街道边界,纳凉/病例 choropleth 共用)、heatcase_points.npz(0.05MB,2013–2025 上海中暑病例 5349 例:坐标/严重度/死亡/年龄/性别/职业/街道归属 + 地理编码质量 conf/precise)、roadnet.npz(2.4MB,中心城区街景路网最大连通分量:74157 节点/95514 边,每边含 length/S_veget 绿视率/采样 LST/折线几何,绿荫凉爽路径用)。
+model_v2.joblib(29MB,LST RF,已 compress)、baseline_v2.npz、feature_grids_dense.npz(21MB)、heat_risk_grid.npz、heat_risk_model.json、heat_cases.npz、heat_ems_points.npz、heat_facility_grids.npz、cooling_mclp.npz(0.49MB,纳凉/小区/街道坐标+属性)、cooling_jiedao.geojson(0.65MB,简化街道边界,纳凉/病例 choropleth 共用)、heatcase_points.npz(0.05MB,2013–2025 上海中暑病例 5349 例:坐标/严重度/死亡/年龄/性别/职业/街道归属 + 地理编码质量 conf/precise;**坐标已脱敏:精确点抖动 ~300m,带 anonymized 标记;精确真源仅本机 heatcase_points_precise.local.npz**)、module_config.json(板块可见性/打码配置)、roadnet.npz(2.4MB,中心城区街景路网最大连通分量:74157 节点/95514 边,每边含 length/S_veget 绿视率/采样 LST/折线几何,绿荫凉爽路径用)。
 
 ## 关键模型决策与坑(别重复踩)
 - **LST 模型**:greenfrac(非NDVI,对应"画多边形改绿地")+ 邻域绿地(300/900m)+ 到最近绿地距离 + 建成/灯光/高程。空间分块 CV **R²≈0.74**。瘦身到 120树/深16/叶50+compress,精度不变。
@@ -73,6 +74,13 @@ MCLP 选址原始数据(cool/residence1/jiedao shp,UTM 51N):来自 `MCLP.zip`,�
 - **新机器/重新 clone 后**:① `pip install -r requirements.txt`(含 `pypdf`,AI 辅助 HIA 解析 PDF 用);② 重配 `.streamlit/secrets.toml`(见下)。
 - **国内 push 大文件被重置(OpenSSL errno 10053)** → 仓库本地配:`git config http.postBuffer 1048576000; git config http.version HTTP/1.1; git config http.lowSpeedLimit 0; git config http.lowSpeedTime 999999`,再多试几次 / 挂代理(`git config --global http.proxy http://127.0.0.1:端口`)。这些是本地 `.git/config`,**不随仓库同步,每台机器要各设一次**。
 - 新机器首次 push 需配 git 身份:`git config user.name swyhns; git config user.email 64192494+swyhns@users.noreply.github.com`;凭据走 GCM(manager-core),首次会弹 GitHub 登录窗。
+
+## 本会话新增(2026-06-10,security / admin / AI 辅助 HIA)
+- **AI 辅助 HIA(定性初筛)** `views/hia_screen.py` + 引擎 `hia_screen.py`:对标《健康影响评估初筛表》。3 段 DeepSeek 流水线 `行动抽取 → 多视角因果路径展开(沿健康决定因素,深度2–3)→ 完整性批判` → 代码确定性聚合到 10 题(强/中且非假设→是;仅推测→不知道;无路径→否)。`st.graphviz_chart` 画可编辑因果路径图(注:**不能用 use_container_width=True**,会把超宽 SVG 压成 0;且页面注入 CSS 让 SVG 自然尺寸+滚动)。PDF 用 `pypdf`(新依赖)、Word 用 python-docx。导出填好的初筛表 docx。
+- **证据库** `hia_evidence.py`:56 张 WHO 官网卡片(带真实 URL,q="Q#"/note/sources/status),`match()` 按题号+关键词双向命中(只在决定因素段、剔除末端结果词防误配)+ `map_evidence()` LLM 语义匹配提召回。`docs/who_evidence_worklist.md` 是取证清单。
+- **访问安全** `auth.py`:口令门 `require_login()`(app_password)+ `rate_limit()` 会话级限流(DeepSeek/百度防刷)。`theme.py` 注 noindex。病例坐标已脱敏(`analysis/anonymize_heatcase.py` 抖动 ~300m;精确真源 `heatcase_points_precise.local.npz` 仅本机 gitignore;**git 历史已 force-push 重写**)。
+- **板块管理** `module_config.py` + `views/admin.py`:`?admin` 进入(会话标志)+ admin_password。单一全局开关隐藏功能页(`module_config.json` 的 disabled)+ 数据打码演示模式(blurred,目前 heatcase 注入 CSS 模糊地图/指标/图表)。app.py 导航按配置过滤。⚠ 云端文件系统临时,面板改动需"导出配置"提交才持久。
+- **杂项**:平台改名「健康城市智能规划与评估平台」;`theme.md_bold()` 把 HTML 文本里的 `**` 转 `<b>`(page_header/首页卡片接入,清字面星号);关于页改标签页 + 延伸阅读(4 篇论文 + 王兰 2023 导读 + 空间干预梯度模型 SVG 自绘图)。
 
 ## 待办/方向
 - ✅ 已完成(2026-06):代码分层(theme/geo/views)、视觉打磨(page_header/胶囊条/卡片)、纳凉 MCLP、中暑病例风险地图、凉爽路径规划(百度+绿荫路网双模式)。
