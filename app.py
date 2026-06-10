@@ -35,22 +35,37 @@ render_banner()
 from auth import require_login
 require_login()   # 未通过口令则在此 st.stop();本地无 app_password secret 时不拦
 
-pages = {
-    "平台首页": [st.Page(page_home, title="首页", icon="🏠", default=True)],
-    "智能助手": [st.Page(page_assistant, title="智能助手(对话引导)", icon="🤖")],
-    "健康风险": [st.Page(page_heatcase_map, title="中暑风险地图", icon="🗺️"),
-             st.Page(page_health_risk, title="热相关重症风险诊断与规划调控", icon="🌡️"),
-             st.Page(page_heatroute, title="清凉路径规划", icon="🧭")],
-    "健康资源": [st.Page(page_ems_response, title="急救反应时间预测", icon="⏱️"),
-             st.Page(page_health_resource, title="急救站布局模拟", icon="🚑"),
-             st.Page(page_facility_layout, title="设施配置优化", icon="📍")],
-    "健康行为": [st.Page(page_bike, title="骑行潜力与建成环境优化", icon="🚲")],
-    "健康影响评估": [st.Page(render_custom_mode, title="绿地规划健康影响评估", icon="🌳"),
-                 st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮"),
-                 st.Page(page_hia_screen, title="AI 辅助 HIA", icon="📝")],
-    "友情链接": [st.Page(page_friends, title="合作学者工具", icon="🔗")],
-    "关于": [st.Page(page_about, title="关于平台", icon="ℹ️")],
+import module_config as mc
+
+# key → 页面函数(标题/图标/分组/顺序见 module_config.PAGES)
+_FUNCS = {
+    "home": page_home, "assistant": page_assistant, "heatcase": page_heatcase_map,
+    "health_risk": page_health_risk, "heatroute": page_heatroute, "ems": page_ems_response,
+    "resource": page_health_resource, "facility": page_facility_layout, "bike": page_bike,
+    "hia_custom": render_custom_mode, "hia_calc": page_hia_calc, "hia_screen": page_hia_screen,
+    "friends": page_friends, "about": page_about,
 }
+
+# 按配置过滤:disabled 列表里的板块对访客隐藏(首页等 locked 始终保留)
+disabled = mc.load_disabled()
+pages = {}
+for p in mc.PAGES:
+    if not p.get("locked") and p["key"] in disabled:
+        continue
+    func = _FUNCS.get(p["key"])
+    if func is None:
+        continue
+    pages.setdefault(p["group"], []).append(
+        st.Page(func, title=p["title"], icon=p["icon"], default=(p["key"] == "home")))
+
+# 管理面板:带 ?admin 访问一次即在本会话内开启(用会话标志,避免导航后 query 参数丢失);
+# 客户从不带 ?admin → 看不到此页。内部再用管理员口令把关。
+if "admin" in st.query_params:
+    st.session_state["_admin_mode"] = True
+if st.session_state.get("_admin_mode"):
+    from views.admin import page_admin
+    pages["管理"] = [st.Page(page_admin, title="模块管理", icon="⚙️")]
+
 nav = st.navigation(pages)
 # 页面注册表(url_path → Page),供智能助手"预填+跳转"用
 st.session_state["_nav_pages"] = {p.url_path: p for grp in pages.values() for p in grp}
