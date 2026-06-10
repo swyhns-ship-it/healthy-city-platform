@@ -126,7 +126,9 @@ def page_hia_screen():
                "颜色:红/橙=风险(强/中),绿=效益,灰=推测;虚线=假设待证。下方可勾选采纳/剪枝。")
     adopted = _adopted()
     if adopted:
-        st.graphviz_chart(hs.build_dot(res["actions"], adopted), use_container_width=True)
+        # 不用 use_container_width:它会把超宽因果图的 SVG 宽高抹成 0 → 整图不显示。
+        # 不传则保留自然尺寸(横向可滚动),图能正常渲染。
+        st.graphviz_chart(hs.build_dot(res["actions"], adopted))
     else:
         st.caption("(当前没有已采纳的路径,勾选下方路径后此处显示图。)")
 
