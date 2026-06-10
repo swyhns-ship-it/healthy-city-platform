@@ -1,25 +1,32 @@
 # -*- coding: utf-8 -*-
-"""AI 辅助 HIA 初筛 —— 引擎(纯逻辑,被 views/hia_screen.py 调用)。
+"""AI 辅助 HIA 初筛 —— 引擎(因果路径版)。
 
-对标国内《健康影响评估初筛表》:评估对象文档(PDF/Word)+ 10 个重点问题,
-逐条给出「是/不知道/否」研判草案 + 影响路径 + 原文依据 + 证据缺口,供单专家复核。
-AI 仅辅助研判,不替代专家判定与签字。
+对标《健康影响评估初筛表》。核心不是"文档→直接判 10 题",而是显式建出
+**政策行动 → 健康决定因素(多级、间接)→ 健康结果(10 题)** 的因果路径网,
+再由代码按确定性阈值聚合到 10 题。让间接/多级路径被系统化展开,贴合 HIA 的
+logic framework 与社会健康决定因素(SDH/Dahlgren–Whitehead)方法。
 
-职责:① 文档抽取(pypdf / python-docx);② 调 DeepSeek 出结构化草案(稳健 JSON + 退化重试);
-③ 生成填好的初筛表 docx。判断阈值/结论档位等确定性逻辑留在页面与本模块的纯函数里,不交给 LLM。
+流水线(被 views/hia_screen.py 调用):
+  ① extract_actions   文档 → 政策行动/要素
+  ② expand_pathways   行动 → 多视角(环境/社会心理/公平/卫生系统)因果路径(深度2–3)
+  ③ critique_augment  完整性批判:补漏的决定因素/脆弱群体/间接效应 + 小结 + 程度建议
+  · compute_items     代码确定性聚合到 10 题(判断阈值不交给 LLM)
+  · build_dot         生成可渲染的因果路径图(DOT,st.graphviz_chart 用)
+AI 仅辅助研判与展开路径,采纳/剪枝/判定/签字以专家为准。
 """
 import json
+import re
 from io import BytesIO
-from datetime import date
 
 import requests
 
 API_URL = "https://api.deepseek.com/chat/completions"
 MODEL = "deepseek-chat"
-MAX_DOC_CHARS = 40000          # 文档过长时截断(MVP 不做切分/检索)
+MAX_DOC_CHARS = 40000
 ANSWERS = ("是", "不知道", "否")
+STRENGTHS = ("强", "中", "推测")
+STATUSES = ("文档支持", "路径库/文献", "假设待证")
 
-# —— 初筛表的 10 个重点问题(与表格文字一致)+ 每条维度释义(给 LLM 做 grounding)——
 QUESTIONS = [
     "可能导致人群传染病和感染性疾病的发生发展。",
     "可能加剧人群重点慢性病的发生发展。",
@@ -32,45 +39,24 @@ QUESTIONS = [
     "可能对优质医疗资源合理配置和利用带来不利影响。",
     "可能对医疗卫生服务质量安全和利用、公平性和可及性带来不利影响。",
 ]
-DIM_GUIDE = [
-    "传染病/感染性疾病:人口聚集、卫生设施、病媒孳生、给排水、人员流动等引发的传播风险。",
-    "重点慢性病:体力活动、饮食环境、空气/噪声等长期暴露对心脑血管、呼吸、代谢等慢病的影响。",
-    "中毒与伤害:危化品、交通、生产安全、建筑施工等导致的急性中毒与意外伤害。",
-    "其他突发公共卫生事件:群体性事件、食源性、职业健康、灾害次生的公共卫生风险。",
-    "人口高质量发展:生育友好、妇幼健康、老龄健康、人口结构与素质相关的不利影响。",
-    "健康环境:空气、饮用水、食品安全、环境卫生、土壤等环境健康要素的不利改变。",
-    "健康生活方式与心理:出行/锻炼/社交空间、社会心理压力、健康公平的社会决定因素。",
-    "卫生投入与医保:公共卫生与医疗投入、医保保障水平的削弱。",
-    "优质医疗资源配置:优质医疗资源的可获得性、布局合理性与利用效率。",
-    "卫生服务质量与可及性:医疗卫生服务的安全、利用、公平性与可及性。",
-]
+# 图/UI 用的短标签
+SHORT_Q = ["传染病", "重点慢病", "中毒伤害", "突发公卫", "人口发展",
+           "健康环境", "生活方式/心理", "卫生投入/医保", "优质医疗资源", "服务质量/可及"]
 
-_SYS = """你是国内「健康影响评估(HIA)初筛」的辅助研判助手,服务对象是评估专家。
-任务:阅读「评估对象」文档,针对《健康影响评估初筛表》的 10 个重点问题逐条研判,
-判断该规划/政策/工程项目是否「可能」对该维度人群健康带来相关影响。
+# —— 健康决定因素脚手架(grounding;让路径展开系统化而非随性联想)——
+DETERMINANTS = """健康决定因素清单(展开路径时逐层套用,可多级串联):
+- 个体生活方式:体力活动、饮食、吸烟饮酒、出行方式选择
+- 社会与社区:社会支持/凝聚力、社会心理压力、孤独、社会资本
+- 生活与工作条件:住房、交通与道路安全、职业暴露与工作环境、就业与收入、教育、
+  食品供应与安全、给排水与环境卫生、医疗卫生服务可及性
+- 环境要素:空气质量(PM2.5/NO2)、水质、噪声、热环境/绿地、土壤、危化品
+- 总体社会经济/文化/环境:人口结构、经济结构、城市空间形态、健康公平"""
 
-研判准则(务必遵守):
-- 每题给出 answer:仅限「是 / 不知道 / 否」。问题问的是「是否*可能*带来影响」,有合理路径即可判「是」。
-- evidence 必须引用文档中的相关原文片段;**若文档没有可支撑的信息,answer 应倾向「不知道」并在 gaps 说明需要专家补充核实什么**。不要凭空编造原文,不要臆断。
-- pathway 写出简短影响路径:行动/要素 → 健康决定因素 → 健康结果。
-- confidence 为 0–1,反映你对该判断的把握。
-- 你是辅助,最终由专家判定;语气中立、克制,不夸大。
-
-只输出一个 JSON 对象(不要任何额外文字、不要 markdown 代码块):
-{
- "items": [{"q": 1, "answer": "是|不知道|否", "confidence": 0.0,
-            "pathway": "影响路径", "evidence": "文档原文依据(无则空字符串)",
-            "gaps": "证据缺口/需专家核实点"}, ... 共 10 条, q 从 1 到 10],
- "summary": "整体研判小结(2–4 句中文)",
- "suggest_level": "很小|轻度|重大"
-}
-suggest_level 仅为参考建议:多数题为「否」且无重大路径→很小;有少数「是」/中等关注→轻度;
-涉及多维度或严重健康风险→重大。"""
+LENSES = ["环境健康", "社会心理与行为", "健康公平与脆弱群体", "卫生系统与服务"]
 
 
+# ============ 文档抽取 ============
 def extract_text(name, data):
-    """从上传文件抽取纯文本。name 用后缀判类型,data 为 bytes。
-    返回 (text, info)。info 含 kind / pages / truncated / error。"""
     info = {"kind": "", "pages": 0, "truncated": False, "error": ""}
     low = (name or "").lower()
     try:
@@ -85,7 +71,7 @@ def extract_text(name, data):
             from docx import Document
             doc = Document(BytesIO(data))
             parts = [p.text for p in doc.paragraphs]
-            for tbl in doc.tables:                       # 含表格文字
+            for tbl in doc.tables:
                 for row in tbl.rows:
                     parts.append("\t".join(c.text for c in row.cells))
             text = "\n".join(parts)
@@ -98,7 +84,6 @@ def extract_text(name, data):
     except Exception as e:
         info["error"] = f"文档解析失败:{e}"
         return "", info
-
     text = (text or "").strip()
     if not text:
         info["error"] = "未能从文档提取到文字(可能是扫描件/图片型 PDF,需 OCR;本工具暂不支持)。"
@@ -108,11 +93,7 @@ def extract_text(name, data):
     return text, info
 
 
-def _questions_block():
-    return "\n".join(f"{i+1}. {q}(维度释义:{DIM_GUIDE[i]})"
-                     for i, q in enumerate(QUESTIONS))
-
-
+# ============ LLM 调用 ============
 def _extract_json(content):
     s = (content or "").strip()
     if s.startswith("```"):
@@ -129,82 +110,276 @@ def _extract_json(content):
         return {}
 
 
-def _normalize(data):
-    """把模型输出规整成 10 条齐全、字段类型正确的结构;缺失项补「不知道」占位。"""
-    by_q = {}
-    for it in (data.get("items") or []):
-        if not isinstance(it, dict):
-            continue
+def _chat_json(system, user, key, timeout=120, max_tokens=4000, temps=(0.3, 0.8)):
+    """调 DeepSeek(json_object)+ 稳健提取 + 升温重试,返回 dict(失败为 {})。"""
+    for temp in temps:
         try:
-            q = int(it.get("q"))
+            r = requests.post(
+                API_URL,
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={"model": MODEL,
+                      "messages": [{"role": "system", "content": system},
+                                   {"role": "user", "content": user}],
+                      "temperature": temp, "response_format": {"type": "json_object"},
+                      "max_tokens": max_tokens},
+                timeout=timeout)
+            r.raise_for_status()
+            data = _extract_json(r.json()["choices"][0]["message"]["content"] or "")
+            if data:
+                return data
         except Exception:
             continue
-        ans = str(it.get("answer", "")).strip()
-        if ans not in ANSWERS:
-            ans = "不知道"
+    return {}
+
+
+def _q_block():
+    return "\n".join(f"{i+1}. {q}" for i, q in enumerate(QUESTIONS))
+
+
+# ============ ① 行动抽取 ============
+_SYS_ACTIONS = """你是健康影响评估(HIA)助手。阅读"评估对象"文档,抽取该规划/政策/工程项目
+**引入的具体行动、要素或改变**(无论是否直接关乎健康)。例如:新建某设施、新增某类交通、
+土地用途改变、人口/就业变化、某项配套的缺失等。每条尽量具体、可核验。
+
+只输出 JSON:{"actions":[{"id":"A1","action":"简明行动描述","evidence":"文档原文依据(无则空)"}]}
+id 用 A1、A2…;不要臆造文档没有的事实;行动数量以文档实际内容为准(通常 5–15 条)。"""
+
+
+def extract_actions(doc_text, key):
+    user = f"【评估对象文档(可能已截断)】\n{doc_text}\n\n请抽取政策行动/要素,只输出 JSON。"
+    data = _chat_json(_SYS_ACTIONS, user, key, max_tokens=2500)
+    out = []
+    for i, a in enumerate(data.get("actions") or [], 1):
+        if not isinstance(a, dict):
+            continue
+        act = str(a.get("action", "") or "").strip()
+        if not act:
+            continue
+        out.append({"id": f"A{i}", "action": act,
+                    "evidence": str(a.get("evidence", "") or "").strip()})
+    return out
+
+
+# ============ ② 路径展开 ============
+_SYS_EXPAND = f"""你是 HIA 因果路径分析专家。给定政策"行动"清单,系统化地推演每个行动如何
+**经由健康决定因素、多级且常常间接地**影响人群健康,最终落到初筛表的某一个重点问题上。
+
+务必:
+1. **多视角全覆盖**:从这些视角各自审视,别漏:{"、".join(LENSES)}。
+2. **沿决定因素逐层展开**(可 2–3 级串联):\n{DETERMINANTS}
+3. **重视间接路径**:如"货运增加→道路阻隔/噪声→体力活动下降→慢性病";"用地改变→就业/收入→医疗可及性"。
+4. **关注脆弱群体**:老人、儿童、户外劳动者、低收入、慢病人群。
+5. **高召回**:宁可多列候选路径;但每条如实标强度与依据,不要把臆测说成事实。
+
+每条路径落到下面 10 个结果问题之一(outcome_q 取 1–10):
+{_q_block()}
+
+只输出 JSON:{{"pathways":[{{
+ "action_id":"A1","chain":["行动→决定因素→…→健康结果 的逐级节点(2–4 个)"],
+ "outcome_q":2,"direction":"风险|效益","population":"受影响人群(尤其脆弱群体)",
+ "lens":"{LENSES[0]}等四视角之一","strength":"强|中|推测",
+ "status":"文档支持|路径库/文献|假设待证","evidence":"文档原文或机制依据(假设则简述)","confidence":0.0
+}}]}}
+chain 用简短中文节点;strength 反映路径成立的把握;status 标依据来源。"""
+
+
+def expand_pathways(actions, doc_text, key):
+    alist = "\n".join(f"{a['id']}: {a['action']}" for a in actions)
+    user = (f"【行动清单】\n{alist}\n\n【评估对象文档(供引用原文)】\n{doc_text[:25000]}\n\n"
+            f"请对每个行动展开多视角因果路径,只输出 JSON。")
+    data = _chat_json(_SYS_EXPAND, user, key, max_tokens=6000)
+    return data.get("pathways") or []
+
+
+# ============ ③ 完整性批判 + 小结 ============
+_SYS_CRITIC = f"""你是 HIA 完整性审稿人。给定行动与已展开的因果路径,**找出被遗漏的部分**并补全:
+- 哪些健康决定因素、视角({"、".join(LENSES)})、脆弱群体还没覆盖?
+- 有没有更间接的二级/三级路径被漏掉?
+- 文档虽未明说、但该类行动通常隐含的健康风险路径?(标 status="假设待证")
+
+补充路径用与展开阶段相同的字段。同时给一段中立、克制的整体研判小结,以及健康影响程度建议。
+
+只输出 JSON:{{"added":[{{"action_id":"A1","chain":[...],"outcome_q":7,"direction":"风险|效益",
+ "population":"...","lens":"...","strength":"强|中|推测","status":"...","evidence":"...","confidence":0.0}}],
+ "summary":"2–4 句整体研判小结","suggest_level":"很小|轻度|重大","notes":"仍需专家补充核实的关键缺口"}}"""
+
+
+def critique_augment(actions, pathways, key):
+    alist = "\n".join(f"{a['id']}: {a['action']}" for a in actions)
+    plist = "\n".join(
+        f"- [{p.get('action_id','?')}→Q{p.get('outcome_q','?')}] "
+        f"{' → '.join(p.get('chain', []))}({p.get('strength','')})"
+        for p in pathways)
+    user = (f"【行动】\n{alist}\n\n【已展开路径】\n{plist}\n\n"
+            f"请批判补全并给小结,只输出 JSON。")
+    data = _chat_json(_SYS_CRITIC, user, key, max_tokens=4000)
+    return (data.get("added") or [], str(data.get("summary", "") or "").strip(),
+            str(data.get("suggest_level", "") or "").strip(),
+            str(data.get("notes", "") or "").strip())
+
+
+# ============ 规整 ============
+def _norm_pathways(raw, action_ids, start=1):
+    out, pid = [], start
+    valid_act = set(action_ids)
+    for p in raw:
+        if not isinstance(p, dict):
+            continue
         try:
-            conf = float(it.get("confidence", 0))
+            q = int(p.get("outcome_q"))
+        except Exception:
+            continue
+        if not (1 <= q <= len(QUESTIONS)):
+            continue
+        chain = [str(c).strip() for c in (p.get("chain") or []) if str(c).strip()]
+        if not chain:
+            continue
+        aid = str(p.get("action_id", "") or "").strip()
+        if aid not in valid_act:
+            aid = action_ids[0] if action_ids else "A1"
+        st = str(p.get("strength", "")).strip()
+        st = st if st in STRENGTHS else "推测"
+        status = str(p.get("status", "")).strip()
+        status = status if status in STATUSES else "假设待证"
+        try:
+            conf = max(0.0, min(1.0, float(p.get("confidence", 0))))
         except Exception:
             conf = 0.0
-        by_q[q] = {
-            "q": q, "answer": ans, "confidence": max(0.0, min(1.0, conf)),
-            "pathway": str(it.get("pathway", "") or "").strip(),
-            "evidence": str(it.get("evidence", "") or "").strip(),
-            "gaps": str(it.get("gaps", "") or "").strip(),
-        }
+        out.append({
+            "id": f"P{pid}", "action_id": aid, "chain": chain, "outcome_q": q,
+            "direction": ("效益" if str(p.get("direction", "")).strip() == "效益" else "风险"),
+            "population": str(p.get("population", "") or "").strip(),
+            "lens": str(p.get("lens", "") or "").strip(),
+            "strength": st, "status": status,
+            "evidence": str(p.get("evidence", "") or "").strip(), "confidence": conf,
+        })
+        pid += 1
+    return out
+
+
+# ============ 代码确定性聚合到 10 题 ============
+def compute_items(pathways):
+    """由(已采纳的)路径确定性聚合出 10 题判定。判断阈值在代码里,不交给 LLM。
+    规则:有「强/中」且依据非纯假设的路径 → 是;仅「推测/假设待证」路径 → 不知道;无路径 → 否。"""
     items = []
     for q in range(1, len(QUESTIONS) + 1):
-        items.append(by_q.get(q, {"q": q, "answer": "不知道", "confidence": 0.0,
-                                  "pathway": "", "evidence": "",
-                                  "gaps": "模型未给出该项,请专家自行研判。"}))
-    level = str(data.get("suggest_level", "")).strip()
+        ps = [p for p in pathways if p["outcome_q"] == q]
+        firm = [p for p in ps if p["strength"] in ("强", "中") and p["status"] != "假设待证"]
+        if firm:
+            ans = "是"
+            conf = max(p["confidence"] for p in firm) if firm else 0.0
+        elif ps:
+            ans = "不知道"
+            conf = max(p["confidence"] for p in ps)
+        else:
+            ans = "否"
+            conf = 0.0
+        gaps = ""
+        if ans == "不知道":
+            gaps = "需核实:" + ";".join(" → ".join(p["chain"]) for p in ps[:3])
+        items.append({"q": q, "answer": ans, "confidence": conf,
+                      "n_path": len(ps), "gaps": gaps})
+    return items
+
+
+def suggest_level_from(items):
+    n_yes = sum(1 for x in items if x["answer"] == "是")
+    if n_yes >= 4:
+        return "重大"
+    if n_yes >= 1:
+        return "轻度"
+    return "很小"
+
+
+# ============ 编排:一次完整分析(3 次调用)============
+def analyze(doc_text, key, project_name="", progress=None):
+    """返回 {actions, pathways, items, summary, suggest_level, notes}。
+    progress(stage:str) 可选回调,用于页面显示进度。"""
+    def _p(s):
+        if progress:
+            progress(s)
+    _p("① 抽取政策行动…")
+    actions = extract_actions(doc_text, key)
+    if not actions:
+        actions = [{"id": "A1", "action": project_name or "评估对象", "evidence": ""}]
+    aids = [a["id"] for a in actions]
+
+    _p("② 多视角展开因果路径…")
+    raw = expand_pathways(actions, doc_text, key)
+    paths = _norm_pathways(raw, aids, start=1)
+
+    _p("③ 完整性批判与补全…")
+    added, summary, level, notes = critique_augment(actions, paths, key)
+    paths += _norm_pathways(added, aids, start=len(paths) + 1)
+
+    items = compute_items(paths)
     if level not in ("很小", "轻度", "重大"):
-        level = ""
-    return {"items": items, "summary": str(data.get("summary", "") or "").strip(),
-            "suggest_level": level}
+        level = suggest_level_from(items)
+    return {"actions": actions, "pathways": paths, "items": items,
+            "summary": summary, "suggest_level": level, "notes": notes}
 
 
-def _call_once(doc_text, project_name, api_key, timeout, temperature, nudge=""):
-    user = (f"【评估对象名称】{project_name or '(未填)'}\n"
-            f"【初筛表 10 个重点问题】\n{_questions_block()}\n\n"
-            f"【评估对象文档全文(可能已截断)】\n{doc_text}\n\n"
-            f"请按系统要求,对 10 个问题逐条研判并只输出 JSON。{nudge}")
-    r = requests.post(
-        API_URL,
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"model": MODEL,
-              "messages": [{"role": "system", "content": _SYS},
-                           {"role": "user", "content": user}],
-              "temperature": temperature,
-              "response_format": {"type": "json_object"}, "max_tokens": 4000},
-        timeout=timeout)
-    r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"] or ""
-    return _extract_json(content)
+# ============ 因果路径图(DOT,供 st.graphviz_chart)============
+def _node_id(prefix, text):
+    return prefix + "_" + re.sub(r"\W+", "", text)[:24] + str(abs(hash(text)) % 1000)
 
 
-def screen(doc_text, api_key, project_name="", timeout=120):
-    """对文档做 10 题初筛研判,返回 {items[10], summary, suggest_level}。
-    沿用 llm_agent 的稳健策略:json_object 偶发吐空白 → 升温 + 扰动重试。"""
-    attempts = [(0.3, ""), (0.7, "务必输出完整 10 条 items,answer 只用「是/不知道/否」。"),
-                (1.0, "用 JSON 回我,items 必须 10 条,evidence 无依据就留空并写 gaps。")]
-    data = {}
-    for temp, nudge in attempts:
-        try:
-            data = _call_once(doc_text, project_name, api_key, timeout, temp, nudge)
-        except Exception:
-            continue
-        if data.get("items"):
-            break
-    return _normalize(data)
+def build_dot(actions, pathways):
+    """把(已采纳的)路径渲染成 DOT:行动(左)→ 决定因素中间节点 → 结果问题(右)。
+    同名中间节点合并;边按强度着色,假设待证用虚线。"""
+    act_label = {a["id"]: a["action"] for a in actions}
+    lines = ["digraph G {", 'rankdir=LR; ranksep=0.7; nodesep=0.25;',
+             'node [fontname="Microsoft YaHei", fontsize=10];',
+             'edge [fontname="Microsoft YaHei", fontsize=9];']
+    used_actions, used_q, det_nodes = set(), set(), {}
+    edges = []
+
+    def det_id(label):
+        if label not in det_nodes:
+            nid = _node_id("D", label)
+            det_nodes[label] = nid
+        return det_nodes[label]
+
+    for p in pathways:
+        col = {"强": "#1B6B3A" if p["direction"] == "效益" else "#C62828",
+               "中": "#2E9E5B" if p["direction"] == "效益" else "#E07B39",
+               "推测": "#9AA0A6"}[p["strength"]]
+        style = "dashed" if p["status"] == "假设待证" else "solid"
+        # 节点序列:action -> chain steps... -> Q
+        seq = [("A_" + p["action_id"], None)]
+        for step in p["chain"]:
+            seq.append((det_id(step), step))
+        seq.append((f"Q{p['outcome_q']}", None))
+        used_actions.add(p["action_id"])
+        used_q.add(p["outcome_q"])
+        for (n1, _), (n2, _) in zip(seq, seq[1:]):
+            edges.append(f'"{n1}" -> "{n2}" [color="{col}", style={style}, penwidth=1.4];')
+
+    # 行动节点(左)
+    lines.append('{ rank=source;')
+    for aid in used_actions:
+        lab = act_label.get(aid, aid).replace('"', "'")[:28]
+        lines.append(f'"A_{aid}" [label="{aid} {lab}", shape=box, style="filled,rounded", '
+                     f'fillcolor="#EAF7EF", color="#1B6B3A"];')
+    lines.append("}")
+    # 决定因素中间节点
+    for lab, nid in det_nodes.items():
+        l = lab.replace('"', "'")[:22]
+        lines.append(f'"{nid}" [label="{l}", shape=ellipse, color="#888"];')
+    # 结果问题节点(右)
+    lines.append('{ rank=sink;')
+    for q in sorted(used_q):
+        lines.append(f'"Q{q}" [label="Q{q} {SHORT_Q[q-1]}", shape=box, '
+                     f'style="filled", fillcolor="#F6FCF8", color="#2E9E5B"];')
+    lines.append("}")
+    lines += edges
+    lines.append("}")
+    return "\n".join(lines)
 
 
-# ============ 初筛表 docx 导出 ============
-def build_screen_docx(header, items, level, expert_opinion):
-    """生成填好的《健康影响评估初筛表》docx(单专家辅助版)。
-    header: dict(name/category/dept/submitter/phone/screen_date/method/related_dept)
-    items: 经专家复核后的 10 条 [{q, answer, pathway, evidence, gaps, note}]
-    level: 健康影响程度(很小/轻度/重大);expert_opinion: 专家意见文本。"""
+# ============ 初筛表 docx ============
+def build_screen_docx(header, items, pathways, level, expert_opinion):
+    """生成填好的《健康影响评估初筛表》docx。pathways 为已采纳路径(用于研判依据章节)。"""
     from docx import Document
     from docx.shared import Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -239,15 +414,10 @@ def build_screen_docx(header, items, level, expert_opinion):
     para("健康影响评估初筛表", size=18, bold=True, name=HEI, color=GREEN,
          align=WD_ALIGN_PARAGRAPH.CENTER, after=10)
 
-    # —— 表头信息 ——
-    info = [("评估对象名称", header.get("name", "")),
-            ("发布/实施类别", header.get("category", "")),
-            ("起草/提交部门", header.get("dept", "")),
-            ("提交人", header.get("submitter", "")),
-            ("电话", header.get("phone", "")),
-            ("初筛日期", header.get("screen_date", "")),
-            ("初筛方法", header.get("method", "")),
-            ("涉及的相关部门", header.get("related_dept", ""))]
+    info = [("评估对象名称", header.get("name", "")), ("发布/实施类别", header.get("category", "")),
+            ("起草/提交部门", header.get("dept", "")), ("提交人", header.get("submitter", "")),
+            ("电话", header.get("phone", "")), ("初筛日期", header.get("screen_date", "")),
+            ("初筛方法", header.get("method", "")), ("涉及的相关部门", header.get("related_dept", ""))]
     t0 = doc.add_table(rows=0, cols=2)
     t0.style = "Table Grid"
     for k, v in info:
@@ -256,7 +426,6 @@ def build_screen_docx(header, items, level, expert_opinion):
         font(cells[1].paragraphs[0].add_run(str(v or "")), size=10.5)
     doc.add_paragraph()
 
-    # —— 10 题研判表 ——
     para("健康影响评估应重点关注的问题", size=12, bold=True, name=HEI, after=6)
     t = doc.add_table(rows=1, cols=5)
     t.style = "Table Grid"
@@ -275,32 +444,36 @@ def build_screen_docx(header, items, level, expert_opinion):
                  bold=(it.get("answer") == label))
     doc.add_paragraph()
 
-    # —— 研判依据(AI 辅助 + 专家备注)——
-    para("研判依据与影响路径(AI 辅助 · 专家核定)", size=12, bold=True, name=HEI, after=6)
+    # 研判依据:按题列出采纳的因果路径
+    para("研判依据 · 因果路径(AI 辅助展开 · 专家核定)", size=12, bold=True, name=HEI, after=6)
+    by_q = {}
+    for p in pathways:
+        by_q.setdefault(p["outcome_q"], []).append(p)
     for it in items:
-        para(f"{it['q']}. 判定:{it.get('answer','')}　路径:{it.get('pathway','') or '—'}",
+        q = it["q"]
+        ps = by_q.get(q, [])
+        para(f"{q}. {SHORT_Q[q-1]} —— 判定:{it.get('answer','')}"
+             + (f"(支撑路径 {len(ps)} 条)" if ps else "(无路径)"),
              size=10, bold=True, after=2)
-        if it.get("evidence"):
-            para(f"   依据原文:{it['evidence']}", size=9.5, color=GREY, after=2)
-        if it.get("gaps"):
-            para(f"   证据缺口:{it['gaps']}", size=9.5, color=GREY, after=2)
+        for p in ps:
+            line = (f"   · [{p['strength']}/{p['status']}] " + " → ".join(p["chain"])
+                    + (f"|人群:{p['population']}" if p["population"] else ""))
+            para(line, size=9.5, color=GREY, after=1)
+            if p.get("evidence"):
+                para(f"     依据:{p['evidence']}", size=9, color=GREY, after=2)
         if it.get("note"):
-            para(f"   专家备注:{it['note']}", size=9.5, after=4)
+            para(f"   专家备注:{it['note']}", size=9.5, after=3)
 
-    # —— 结论 ——
     doc.add_paragraph()
     para("评估专家组意见", size=12, bold=True, name=HEI, after=4)
     para(expert_opinion or "(待专家填写)", size=10.5, after=8)
     levels = ["很小", "轻度", "重大"]
-    line = "结论:健康影响程度　" + "　".join(
-        ("☑" if level == lv else "□") + lv for lv in levels)
-    para(line, size=11, bold=True, after=10)
-
+    para("结论:健康影响程度　" + "　".join(("☑" if level == lv else "□") + lv for lv in levels),
+         size=11, bold=True, after=10)
     para("专家组长审定签字:____________　日期:____年__月__日", size=10.5, after=4)
     para("参与专家签字:____________　日期:____年__月__日", size=10.5, after=10)
-
-    para("说明:本表由「AI 辅助 HIA」工具协助生成——AI 仅基于上传文档提供研判草案与原文依据,"
-         "判定结论以专家核定与签字为准,AI 不替代专家判定。", size=9, color=GREY)
+    para("说明:本表由「AI 辅助 HIA」工具协助生成——AI 仅基于上传文档展开因果路径与研判草案,"
+         "路径采纳、判定与签字以专家核定为准,AI 不替代专家判定。", size=9, color=GREY)
 
     buf = BytesIO()
     doc.save(buf)
