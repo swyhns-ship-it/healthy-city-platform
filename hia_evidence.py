@@ -140,6 +140,25 @@ def annotate(pathways):
     return pathways
 
 
+def gaps(pathways):
+    """汇总当前匹配不到证据卡片的(机制链 → 题号)去重清单,供专家批量补卡。
+    按"题号 + 终末两级链路"去重(一张卡片大致对应一条终末机制链)。"""
+    seen, out = set(), []
+    for p in pathways:
+        if p.get("cards"):
+            continue
+        chain, q = p.get("chain") or [], p.get("outcome_q")
+        if not chain or not q:
+            continue
+        sig = (q, "→".join(chain[-2:]))
+        if sig in seen:
+            continue
+        seen.add(sig)
+        out.append({"q": q, "chain": list(chain)})
+    out.sort(key=lambda g: g["q"])
+    return out
+
+
 # 专家后续增补卡片模板(把更细的期刊 meta 加到 CARDS 里即可):
 # {"keys": ["关键词1", "关键词2"], "q": [2, 6],
 #  "link": "某决定因素 → 某健康结果",

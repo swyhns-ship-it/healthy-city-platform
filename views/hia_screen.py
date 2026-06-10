@@ -189,6 +189,19 @@ def page_hia_screen():
             else:
                 st.warning("请填写因果链。")
 
+    # —— 待补证清单(让缺口收敛):列出当前无来源的机制链,供批量补卡 ——
+    gap_list = hia_evidence.gaps(_all_pathways())
+    with st.expander(f"🧩 待补证清单({len(gap_list)} 条机制链暂无 WHO/meta 来源)"):
+        if not gap_list:
+            st.caption("当前所有路径都已匹配到证据卡片。")
+        else:
+            st.caption("下面是当前匹配不到来源的「机制链 → 题号」(已去重)。复制这段,喂给"
+                       "「Claude-in-Chrome 证据爬取提示词」即可批量得到带真实网址的卡片,"
+                       "再粘进 hia_evidence.py 的 CARDS。")
+            txt = "\n".join(f"[Q{g['q']} {hs.SHORT_Q[g['q']-1]}] " + " → ".join(g["chain"])
+                            for g in gap_list)
+            st.code(txt, language="text")
+
     # ===== ⑤ 聚合判定(由已采纳路径确定性算出)+ 专家覆盖 =====
     st.divider()
     st.markdown("##### ⑤ 10 题判定(系统按已采纳路径聚合,专家可改判)")
