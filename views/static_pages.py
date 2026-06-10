@@ -4,6 +4,42 @@ import streamlit as st
 
 from theme import page_header, md_bold
 
+# 「健康风险—资源—行为」空间干预梯度模型示意(据王兰 2023 重绘,矢量自绘,非原图)
+_LADDER_SVG = """
+<svg viewBox="0 0 1000 400" width="100%" xmlns="http://www.w3.org/2000/svg"
+     style="max-width:780px; display:block; margin:0.4rem auto 0.2rem;">
+  <rect x="0" y="30" width="1000" height="110" fill="#EEF5DE"/>
+  <rect x="0" y="140" width="1000" height="110" fill="#E2F0E8"/>
+  <rect x="0" y="250" width="1000" height="110" fill="#E4EEF7"/>
+  <polygon points="430,30 513,140 347,140" fill="#8CBF4F"/>
+  <polygon points="347,140 513,140 597,250 263,250" fill="#4FA07C"/>
+  <polygon points="263,250 597,250 680,360 180,360" fill="#3479B0"/>
+  <line x1="513" y1="140" x2="980" y2="140" stroke="#B9C8B0" stroke-dasharray="6 5"/>
+  <line x1="597" y1="250" x2="980" y2="250" stroke="#A9C0CE" stroke-dasharray="6 5"/>
+  <text x="430" y="80" text-anchor="middle" fill="#fff" font-size="19" font-weight="700">健康</text>
+  <text x="430" y="106" text-anchor="middle" fill="#fff" font-size="19" font-weight="700">行为</text>
+  <text x="430" y="206" text-anchor="middle" fill="#fff" font-size="22" font-weight="700">健康资源</text>
+  <text x="430" y="316" text-anchor="middle" fill="#fff" font-size="22" font-weight="700">健康风险</text>
+  <text x="700" y="84" fill="#3B6B1F" font-size="23" font-weight="700">路径3:干预促进</text>
+  <text x="700" y="114" fill="#555" font-size="17">促进体力活动和交往</text>
+  <text x="700" y="194" fill="#1F6B4E" font-size="23" font-weight="700">路径2:支撑保障</text>
+  <text x="700" y="224" fill="#555" font-size="17">提供可获得的健康设施</text>
+  <text x="700" y="304" fill="#1C4E78" font-size="23" font-weight="700">路径1:基线控制</text>
+  <text x="700" y="334" fill="#555" font-size="17">减少外界病源及人体暴露风险</text>
+  <polygon points="40,98 110,98 75,46" fill="#2E6FA8"/>
+  <rect x="55" y="98" width="40" height="262" fill="#2E6FA8"/>
+  <text x="75" y="140" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">空</text>
+  <text x="75" y="175" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">间</text>
+  <text x="75" y="210" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">健</text>
+  <text x="75" y="245" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">康</text>
+  <text x="75" y="280" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">性</text>
+  <text x="75" y="315" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">能</text>
+  <text x="124" y="118" fill="#2E6FA8" font-size="26" font-weight="700">+</text>
+  <text x="126" y="352" fill="#2E6FA8" font-size="30" font-weight="700">−</text>
+  <line x1="133" y1="132" x2="133" y2="332" stroke="#2E6FA8" stroke-dasharray="3 4"/>
+</svg>
+"""
+
 
 def page_home():
     page_header(
@@ -85,6 +121,10 @@ def _extended_reading():
         "- **健康城市规划**:将健康因素系统融入各尺度、各类型的空间规划,即「为健康而规划」。")
 
     st.markdown("**二、理论模型:「健康风险—资源—行为」空间干预梯度**")
+    st.markdown(_LADDER_SVG, unsafe_allow_html=True)
+    st.caption("图:「健康风险—资源—行为」空间干预梯度模型(据王兰 2023 重绘)。"
+               "三条路径自下而上递进——基线控制(健康风险)→ 支撑保障(健康资源)→ 干预促进(健康行为),"
+               "共同提升空间健康性能。")
     st.markdown(
         "由作者此前提出的「四要素三路径」模型进阶而来,被世界卫生组织(WHO)与联合国人居署"
         "联合发布的《健康城市与区域规划指南》采纳为核心理论依据。\n"
