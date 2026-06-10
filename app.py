@@ -25,12 +25,14 @@ from views.bike import page_bike
 from views.hia import page_hia_cases, render_custom_mode
 from views.hia_calc import page_hia_calc
 from views.methodology import render_methodology
+from views.assistant import page_assistant
 
 inject_css()
 render_banner()
 
-nav = st.navigation({
+pages = {
     "平台首页": [st.Page(page_home, title="首页", icon="🏠", default=True)],
+    "智能助手": [st.Page(page_assistant, title="智能助手(对话引导)", icon="🤖")],
     "健康风险": [st.Page(page_heatcase_map, title="中暑风险地图", icon="🗺️"),
              st.Page(page_health_risk, title="热相关重症风险诊断与规划调控", icon="🌡️"),
              st.Page(page_heatroute, title="清凉路径规划", icon="🧭")],
@@ -41,5 +43,8 @@ nav = st.navigation({
     "健康影响评估": [st.Page(render_custom_mode, title="绿地规划健康影响评估", icon="🌳"),
                  st.Page(page_hia_calc, title="规划方案 HIA 计算器", icon="🧮")],
     "关于": [st.Page(page_about, title="关于平台", icon="ℹ️")],
-})
+}
+nav = st.navigation(pages)
+# 页面注册表(url_path → Page),供智能助手"预填+跳转"用
+st.session_state["_nav_pages"] = {p.url_path: p for grp in pages.values() for p in grp}
 nav.run()
