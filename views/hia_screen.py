@@ -154,10 +154,12 @@ def page_hia_screen():
                 cards = p.get("cards") or []
                 if cards:
                     for c in cards:
-                        st.caption(f"　📚 来源:{c['link']} — {'、'.join(c['sources'])}"
-                                   f"(证据强度:{c['strength']})")
+                        st.caption("　📚 来源:" + "；".join(c["sources"])
+                                   + ("　(WHO来源待补强)" if c.get("status") == "todo" else ""))
+                        if c.get("note"):
+                            st.caption("　　" + c["note"])
                 else:
-                    st.caption("　📚 机制来源:机制推断 · 待专家补证(可在 hia_evidence 增补 WHO/meta 卡片)")
+                    st.caption("　📚 机制来源:机制推断 · 待专家补证(可在 hia_evidence.py 的 CARDS 增补)")
 
     # —— 专家补充自定义路径 ——
     with st.expander("➕ 补充自定义路径(专家手动添加)"):

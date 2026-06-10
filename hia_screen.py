@@ -467,9 +467,11 @@ def build_screen_docx(header, items, pathways, level, expert_opinion):
                 para(f"     文档依据:{p['evidence']}", size=9, color=GREY, after=1)
             cards = p.get("cards") or []
             if cards:
-                src = ";".join(f"{c['link']}(来源:{'、'.join(c['sources'])};证据{c['strength']})"
-                               for c in cards)
-                para(f"     机制来源:{src}", size=9, color=GREY, after=2)
+                for c in cards:
+                    tag = "(WHO来源待补强)" if c.get("status") == "todo" else ""
+                    para(f"     机制来源{tag}:{'；'.join(c['sources'])}", size=9, color=GREY, after=1)
+                    if c.get("note"):
+                        para(f"       要点:{c['note']}", size=9, color=GREY, after=2)
             else:
                 para("     机制来源:机制推断 · 待专家补证", size=9, color=GREY, after=2)
         if it.get("note"):
