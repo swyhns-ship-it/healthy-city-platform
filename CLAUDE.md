@@ -1,4 +1,4 @@
-# 健康城市规划与智能评估平台 — 项目说明(给 Claude Code)
+# 健康城市智能规划与评估平台 — 项目说明(给 Claude Code)
 
 > 本文件随仓库提交,任何机器克隆后 Claude Code 自动读取,作为跨机器的项目上下文。
 > 用户:孙文尧(同济 CAUP · 王兰团队 · 健康城市方向)。Python 熟,前端不熟。中文回复、简明、给可执行下一步。
@@ -6,7 +6,7 @@
 ## 是什么
 Streamlit 多页平台:基于上海 100m 实测栅格 + 机器学习,做城市热环境健康影响评估与调控。
 已部署 Streamlit Community Cloud(repo: github.com/swyhns-ship-it/healthy-city-platform,main 文件 `app.py`,**Python 3.11**)。
-顶部标题「健康城市规划与智能评估平台」。
+顶部标题「健康城市智能规划与评估平台」。
 
 ## 运行
 ```bash

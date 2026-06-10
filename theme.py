@@ -3,12 +3,20 @@
 
 被 app.py(注入 CSS / banner)与各 views 页面(page_header / 颜色常量)引用。
 """
+import re
+
 import streamlit as st
 
 
 HEALTH_GREEN = "#2E9E5B"      # 主强调色
 GREEN_DEEP = "#1B6B3A"        # 深绿(标题)
 TONGJI_RED = "#A6192E"        # 同济红(仅作品牌点缀,保留备用)
+
+
+def md_bold(s):
+    """把 Markdown 的 **加粗** 转成 HTML <b>,供 unsafe_allow_html 的 HTML 文本用
+    (否则 ** 会原样显示成星号)。普通 st.markdown 文本不要用本函数。"""
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s or "")
 
 
 def inject_css():
@@ -150,7 +158,7 @@ def render_banner():
           </div>
           <div style="font-family:'Noto Serif SC','SimSun',serif; font-size:1.9rem;
                       font-weight:700; color:{GREEN_DEEP}; letter-spacing:1px;">
-            健康城市规划与智能评估平台
+            健康城市智能规划与评估平台
           </div>
           <div style="color:#5a7a66; font-size:0.9rem;">
             AI 辅助 · 健康风险-资源-行为规划调控 · 演示系统
@@ -163,8 +171,8 @@ def render_banner():
 
 def page_header(title, subtitle=None):
     """统一页头:小色条 + 衬线标题 +(可选)副标题 + 细分隔线。全站一致。"""
-    sub = f"<div class='page-head-sub'>{subtitle}</div>" if subtitle else ""
+    sub = f"<div class='page-head-sub'>{md_bold(subtitle)}</div>" if subtitle else ""
     st.markdown(
-        f"<div class='page-head'><div class='page-head-title'>{title}</div>{sub}</div>"
+        f"<div class='page-head'><div class='page-head-title'>{md_bold(title)}</div>{sub}</div>"
         "<hr class='page-head-rule'/>",
         unsafe_allow_html=True)

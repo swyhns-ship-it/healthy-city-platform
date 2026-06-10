@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""健康城市规划与智能评估平台 — Streamlit 多页入口。
+"""健康城市智能规划与评估平台 — Streamlit 多页入口。
 
 按研究维度分组导航。页面在 views/、共享样式在 theme.py、地图/坐标工具在 geo.py、
 计算引擎为根目录各 *.py(green_lst / heat_risk / cooling_mclp / hia_engine / cases / report_docx)。
@@ -8,7 +8,7 @@
 import streamlit as st
 
 st.set_page_config(
-    page_title="健康城市规划与智能评估平台",
+    page_title="健康城市智能规划与评估平台",
     page_icon="🌳",
     layout="wide",
 )
